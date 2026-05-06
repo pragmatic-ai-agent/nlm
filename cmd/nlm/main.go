@@ -32,45 +32,45 @@ import (
 
 // Global flags
 var (
-	showVersion        bool
-	experimental       bool // surface experimental commands in help + allow them to run
-	authToken          string
-	cookies            string
-	debug              bool
-	debugDumpPayload   bool
-	debugParsing       bool
-	debugFieldMapping  bool
-	chromeProfile      string
-	mimeType           string
-	chunkedResponse    bool   // Control rt=c parameter for chunked vs JSON array response
-	useDirectRPC       bool   // Use direct RPC calls instead of orchestration service
-	skipSources        bool   // Skip fetching sources for chat (useful when project is inaccessible)
-	yes                bool   // Skip confirmation prompts
-	sourceName         string // Custom name for added sources
-	showChatHistory    bool   // Show previous chat conversation on start
-	showThinking       bool   // Show thinking headers while streaming responses
-	thinkingJSONL      bool   // Emit chat events (thinking/answer/citation/followup) as JSON-lines on stdout
-	verbose            bool   // Show full thinking traces while streaming responses
-	replaceSourceID    string // Source ID to replace when adding
-	force              bool   // Force re-upload even if unchanged
-	dryRun             bool   // Show what would change without uploading
-	maxBytes           int    // Chunk threshold for sync
-	jsonOutput         bool   // NDJSON output for sync
-	packChunk          int    // 1-indexed chunk to emit (sync-pack); 0 = auto (single chunk) or list
-	reportPrompt       string // Per-section prompt template for generate-report ({topic} replaced)
-	reportInstructions string // Notebook instructions to set before generate-report
-	reportSections     int    // Max sections for generate-report (0 = all)
-	conversationID     string // Conversation ID to continue (generate-chat)
-	useWebChat         bool   // Use most recent server-side conversation (generate-chat)
+	showVersion          bool
+	experimental         bool // surface experimental commands in help + allow them to run
+	authToken            string
+	cookies              string
+	debug                bool
+	debugDumpPayload     bool
+	debugParsing         bool
+	debugFieldMapping    bool
+	chromeProfile        string
+	mimeType             string
+	chunkedResponse      bool   // Control rt=c parameter for chunked vs JSON array response
+	useDirectRPC         bool   // Use direct RPC calls instead of orchestration service
+	skipSources          bool   // Skip fetching sources for chat (useful when project is inaccessible)
+	yes                  bool   // Skip confirmation prompts
+	sourceName           string // Custom name for added sources
+	showChatHistory      bool   // Show previous chat conversation on start
+	showThinking         bool   // Show thinking headers while streaming responses
+	thinkingJSONL        bool   // Emit chat events (thinking/answer/citation/followup) as JSON-lines on stdout
+	verbose              bool   // Show full thinking traces while streaming responses
+	replaceSourceID      string // Source ID to replace when adding
+	force                bool   // Force re-upload even if unchanged
+	dryRun               bool   // Show what would change without uploading
+	maxBytes             int    // Chunk threshold for sync
+	jsonOutput           bool   // NDJSON output for sync
+	packChunk            int    // 1-indexed chunk to emit (sync-pack); 0 = auto (single chunk) or list
+	reportPrompt         string // Per-section prompt template for generate-report ({topic} replaced)
+	reportInstructions   string // Notebook instructions to set before generate-report
+	reportSections       int    // Max sections for generate-report (0 = all)
+	conversationID       string // Conversation ID to continue (generate-chat)
+	useWebChat           bool   // Use most recent server-side conversation (generate-chat)
 	citationMode         string // Citation rendering mode: off|block|overlay (default block-on-TTY)
 	resolveCitationsFlag bool   // When true, resolve txtar-aware "file:line" coordinates for each citation
 	sourceIDsFlag        string // Comma-separated list, or "-" to read newline-delimited IDs from stdin
-	sourceMatchFlag    string // Regex matched against source titles and UUIDs; unioned with --source-ids
-	sourceExcludeFlag  string // Regex matched against source titles and UUIDs; subtracted from the include set
-	labelIDsFlag       string // Comma-separated label IDs; their member sources are added to the include set
-	labelMatchFlag     string // Regex matched against label names; member sources of matching labels are included
-	labelExcludeFlag   string // Regex matched against label names; member sources of matching labels are subtracted
-	promptFile         string // Read prompt from file (nlm chat). "-" reads from stdin.
+	sourceMatchFlag      string // Regex matched against source titles and UUIDs; unioned with --source-ids
+	sourceExcludeFlag    string // Regex matched against source titles and UUIDs; subtracted from the include set
+	labelIDsFlag         string // Comma-separated label IDs; their member sources are added to the include set
+	labelMatchFlag       string // Regex matched against label names; member sources of matching labels are included
+	labelExcludeFlag     string // Regex matched against label names; member sources of matching labels are subtracted
+	promptFile           string // Read prompt from file (nlm chat). "-" reads from stdin.
 )
 
 // ChatSession represents a persistent chat conversation
@@ -316,6 +316,9 @@ func friendlyError(err error) string {
 	}
 	var apiErr *batchexecute.APIError
 	if !errors.As(err, &apiErr) {
+		if isAuthenticationError(err) {
+			return friendlyAuthenticationError(err)
+		}
 		return err.Error()
 	}
 	// Strip the "API error <N> (<Type>): <msg>" suffix from the wrapped
@@ -370,6 +373,18 @@ func friendlyTypedError(err, target error, msg string) string {
 // Prefers ErrorCode.Description (from the dictionary) over raw Message, and
 // never surfaces the numeric code to the user.
 func friendlyAPIMessage(apiErr *batchexecute.APIError) string {
+	if apiErr.ErrorCode != nil {
+		switch apiErr.ErrorCode.Type {
+		case batchexecute.ErrorTypeAuthentication,
+			batchexecute.ErrorTypeAuthorization,
+			batchexecute.ErrorTypePermissionDenied:
+			return "authentication expired or invalid; run `nlm auth` to refresh, or re-export NLM_AUTH_TOKEN / NLM_COOKIES"
+		}
+	}
+	switch apiErr.HTTPStatus {
+	case 401, 403:
+		return "authentication expired or invalid; run `nlm auth` to refresh, or re-export NLM_AUTH_TOKEN / NLM_COOKIES"
+	}
 	// Code 9 ("Failed precondition") arrives bare for AddSource* — no
 	// diagnostic text. The dictionary description ("Operation was rejected
 	// for a state reason.") is too vague to act on. Replace with a list of
@@ -387,6 +402,21 @@ func friendlyAPIMessage(apiErr *batchexecute.APIError) string {
 		return apiErr.Message
 	}
 	return "request failed"
+}
+
+func friendlyAuthenticationError(err error) string {
+	const msg = "authentication expired or invalid; run `nlm auth` to refresh, or re-export NLM_AUTH_TOKEN / NLM_COOKIES"
+	full := err.Error()
+	lower := strings.ToLower(full)
+	if strings.Contains(lower, "authentication required") {
+		return "authentication required; run `nlm auth` first, or export NLM_AUTH_TOKEN and NLM_COOKIES"
+	}
+	for _, marker := range []string{": batchexecute error", ": http error", ": unauthorized"} {
+		if i := strings.Index(lower, marker); i > 0 {
+			return full[:i] + ": " + msg
+		}
+	}
+	return msg
 }
 
 // isAuthCommand returns true if the command requires authentication
@@ -419,7 +449,7 @@ func run() error {
 
 	if flag.NArg() < 1 {
 		flag.Usage()
-		os.Exit(exitBadArgs)
+		return errBadArgs
 	}
 
 	rawArgs := flag.Args()
@@ -428,7 +458,7 @@ func run() error {
 	// Handle help aliases.
 	if helpAliases[cmdName] {
 		flag.Usage()
-		os.Exit(exitSuccess)
+		return nil
 	}
 
 	// Look up command in the table, preferring the longest multi-token match.
@@ -439,7 +469,7 @@ func run() error {
 		// without dumping the full table.
 		if section := nounSectionFromArgs(rawArgs); section != "" {
 			printSectionUsage(section)
-			os.Exit(exitSuccess)
+			return nil
 		}
 		// "did you mean" hint for likely typos: check the closest
 		// top-level command, and if the first arg looks like a section
@@ -449,7 +479,7 @@ func run() error {
 			fmt.Fprintf(os.Stderr, "nlm: unknown command %q. Did you mean %q?\n\n", strings.Join(rawArgs, " "), guess)
 		}
 		flag.Usage()
-		os.Exit(exitBadArgs)
+		return errBadArgs
 	}
 	warnCompatibilityCommand(cmdName, entry)
 
@@ -556,7 +586,6 @@ func run() error {
 		// Last attempt — surface an actionable message and return the
 		// underlying error so callers still see the full server context.
 		if i == maxAttempts-1 {
-			fmt.Fprintln(os.Stderr, "nlm: session expired. Run `nlm auth` to refresh, or re-export NLM_AUTH_TOKEN / NLM_COOKIES.")
 			return cmdErr
 		}
 
@@ -675,39 +704,48 @@ func runMCP(client *api.Client) error {
 	return nlmmcp.Run(context.Background(), client, impl)
 }
 
-// confirmAction prompts the user for confirmation unless --yes is set.
-// When stdin is not a TTY and --yes was not passed, the function refuses
-// rather than calling fmt.Scanln. Silently consuming piped input is the
-// worst possible behavior for destructive operations: scripts that pipe
-// source IDs into rm-source would have their input eaten by the prompt
-// and the destructive action half-executed.
+var openControllingTTY = func() (io.ReadWriteCloser, error) {
+	return os.OpenFile("/dev/tty", os.O_RDWR, 0)
+}
+
+// confirmAction prompts the user for confirmation unless --yes is set. The
+// prompt uses /dev/tty, not stdin, so commands can pipe IDs or content into
+// stdin without the confirmation prompt consuming pipeline data.
 func confirmAction(prompt string) bool {
-	if yes {
-		return true
-	}
-	if !isTerminal(os.Stdin) {
-		fmt.Fprintf(os.Stderr, "%s\nrefusing to prompt in non-interactive mode; pass -y to confirm\n", prompt)
-		return false
-	}
-	fmt.Fprintf(os.Stderr, "%s [y/N] ", prompt)
-	var response string
-	fmt.Scanln(&response)
-	return strings.HasPrefix(strings.ToLower(response), "y")
+	return confirm(prompt, false)
 }
 
 func confirmActionDefaultYes(prompt string) bool {
+	return confirm(prompt, true)
+}
+
+func confirm(prompt string, defaultYes bool) bool {
 	if yes {
 		return true
 	}
-	if !isTerminal(os.Stdin) {
-		fmt.Fprintf(os.Stderr, "%s\nrefusing to prompt in non-interactive mode; pass -y to confirm\n", prompt)
+
+	tty, err := openControllingTTY()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s\nrefusing to prompt without a controlling terminal; pass -y to confirm\n", prompt)
 		return false
 	}
-	fmt.Fprintf(os.Stderr, "%s [Y/n] ", prompt)
-	var response string
-	fmt.Scanln(&response)
+	defer tty.Close()
+
+	suffix := "[y/N]"
+	if defaultYes {
+		suffix = "[Y/n]"
+	}
+	fmt.Fprintf(tty, "%s %s ", prompt, suffix)
+	response, err := bufio.NewReader(tty).ReadString('\n')
+	if err != nil && err != io.EOF {
+		fmt.Fprintf(os.Stderr, "read confirmation: %v\n", err)
+		return false
+	}
 	response = strings.TrimSpace(strings.ToLower(response))
-	return response == "" || strings.HasPrefix(response, "y")
+	if response == "" {
+		return defaultYes
+	}
+	return strings.HasPrefix(response, "y")
 }
 
 // Notebook operations
@@ -1957,10 +1995,10 @@ type chatStreamRenderer struct {
 	jsonl                bool // when true, emit typed JSON-lines events on r.out instead of human output
 	jsonlIncludeThinking bool // when true, thinking chunks are emitted as JSON-lines events (otherwise skipped)
 	citationMode         citationRenderMode
-	tailWindow           int                          // tail mode: max bytes held back for splicing
-	resolveTitle         func(sourceID string) string                       // optional; returns "" if unknown
+	tailWindow           int                                               // tail mode: max bytes held back for splicing
+	resolveTitle         func(sourceID string) string                      // optional; returns "" if unknown
 	loadSource           func(sourceID string) (api.LoadSourceText, error) // optional; populated when --resolve-citations is set
-	resolvedLocations    map[citationKey]string                             // computed once at Finish; keyed by citationKey
+	resolvedLocations    map[citationKey]string                            // computed once at Finish; keyed by citationKey
 	lastThinkingLen      int
 	answerBuf            strings.Builder
 	thinking             string

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"errors"
+	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -61,3 +65,94 @@ func TestResolveIDList(t *testing.T) {
 }
 
 // Note: resolveIDList("-") requires non-TTY stdin; exercised at integration level.
+
+type fakeTTY struct {
+	r *strings.Reader
+	w bytes.Buffer
+}
+
+func (f *fakeTTY) Read(p []byte) (int, error)  { return f.r.Read(p) }
+func (f *fakeTTY) Write(p []byte) (int, error) { return f.w.Write(p) }
+func (f *fakeTTY) Close() error                { return nil }
+
+func TestConfirmActionUsesControllingTTY(t *testing.T) {
+	oldYes := yes
+	yes = false
+	t.Cleanup(func() { yes = oldYes })
+
+	oldOpen := openControllingTTY
+	tty := &fakeTTY{r: strings.NewReader("y\n")}
+	openControllingTTY = func() (io.ReadWriteCloser, error) { return tty, nil }
+	t.Cleanup(func() { openControllingTTY = oldOpen })
+
+	oldStdin := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteString("pipeline-data\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		r.Close()
+	})
+
+	if !confirmAction("delete?") {
+		t.Fatal("confirmAction returned false; want true")
+	}
+	if got := tty.w.String(); !strings.Contains(got, "delete? [y/N]") {
+		t.Fatalf("tty prompt = %q, want confirmation prompt", got)
+	}
+	left, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(left) != "pipeline-data\n" {
+		t.Fatalf("stdin was consumed: got %q", left)
+	}
+}
+
+func TestConfirmActionNoTTYLeavesStdin(t *testing.T) {
+	oldYes := yes
+	yes = false
+	t.Cleanup(func() { yes = oldYes })
+
+	oldOpen := openControllingTTY
+	openControllingTTY = func() (io.ReadWriteCloser, error) {
+		return nil, errors.New("no tty")
+	}
+	t.Cleanup(func() { openControllingTTY = oldOpen })
+
+	oldStdin := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteString("y\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		r.Close()
+	})
+
+	if confirmAction("delete?") {
+		t.Fatal("confirmAction returned true without a tty")
+	}
+	left, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(left) != "y\n" {
+		t.Fatalf("stdin was consumed: got %q", left)
+	}
+}
