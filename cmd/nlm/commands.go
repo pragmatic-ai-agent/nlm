@@ -229,13 +229,9 @@ var commands = []command{
 	},
 	{
 		name: "analytics", argsUsage: "<notebook-id>",
-		usage: "Show notebook analytics (experimental; wire returns activity time-series, not scalar counts — current decoder misreports)", section: "Notebook",
+		usage: "Show notebook analytics time series", section: "Notebook",
 		minArgs: 1, maxArgs: 1,
-		hidden: true, // AUrzMb returns time-series metrics; proto expects scalar counts. Needs redesign.
 		run: func(c *api.Client, args []string) error {
-			if !experimentalEnabled() {
-				return fmt.Errorf("analytics is experimental (wire returns activity time-series, not scalar counts; current output misreports); pass --experimental or set NLM_EXPERIMENTAL=1")
-			}
 			return getAnalytics(c, args[0])
 		},
 	},
@@ -1053,9 +1049,7 @@ var commandIndex map[string]*command
 var commandStarts map[string]bool
 var maxCommandWords int
 
-var experimentalCommands = map[string]bool{
-	"analytics": true,
-}
+var experimentalCommands = map[string]bool{}
 
 var internalCommands = map[string]bool{
 	"dump-load-source": true,

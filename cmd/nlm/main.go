@@ -1515,36 +1515,41 @@ func heartbeat(c *api.Client) error {
 
 // New orchestration service functions
 
-// Analytics and featured projects.
-//
-// BROKEN — proto contract does not match wire. AUrzMb returns a repeated
-// time-series (metric_id + ~30 daily buckets per metric), not the scalar
-// counts the generated ProjectAnalytics proto expects. Fields below read
-// arbitrary bytes from the time-series encoding; do not trust them.
-// Fixture: internal/notebooklm/api/testdata/AUrzMb_analytics_response.json.
-// Gated behind --experimental until a proper MetricSeries proto + UX land.
 func getAnalytics(c *api.Client, projectID string) error {
-	orchClient := service.NewLabsTailwindOrchestrationServiceClient(authToken, cookies)
-	resp, err := orchClient.GetProjectAnalytics(context.Background(), &pb.GetProjectAnalyticsRequest{
-		ProjectId: projectID,
-	})
+	resp, err := c.GetProjectAnalytics(projectID)
 	if err != nil {
 		return fmt.Errorf("get analytics: %w", err)
 	}
-	fmt.Printf("Project Analytics for %s:\n", projectID)
-	fmt.Printf("  Sources: %d\n", int32Value(resp.GetSourceCount()))
-	fmt.Printf("  Notes: %d\n", int32Value(resp.GetNoteCount()))
-	fmt.Printf("  Audio Overviews: %d\n", int32Value(resp.GetAudioOverviewCount()))
-	fmt.Fprintln(os.Stderr, "warning: analytics output is unreliable; wire returns time-series metrics, not scalar counts")
 
-	return nil
-}
-
-func int32Value(v interface{ GetValue() int32 }) int32 {
-	if v == nil {
-		return 0
+	if jsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		for _, series := range resp.Series {
+			for _, point := range series.Points {
+				rec := analyticsRecord{
+					ProjectID: projectID,
+					MetricID:  series.MetricID,
+					Time:      point.Time.Format(time.RFC3339),
+					Value:     point.Value,
+				}
+				if err := enc.Encode(rec); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	}
-	return v.GetValue()
+
+	w, flush := newListWriter(os.Stdout)
+	fmt.Fprintln(w, "METRIC\tDATE\tVALUE")
+	for _, series := range resp.Series {
+		for _, point := range series.Points {
+			fmt.Fprintf(w, "%d\t%s\t%d\n",
+				series.MetricID,
+				point.Time.Format("2006-01-02"),
+				point.Value)
+		}
+	}
+	return flush()
 }
 
 func listFeaturedProjects(c *api.Client) error {

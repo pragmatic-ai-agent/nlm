@@ -36,6 +36,13 @@ type featuredProjectRecord struct {
 	SourceCount int    `json:"source_count"`
 }
 
+type analyticsRecord struct {
+	ProjectID string `json:"project_id"`
+	MetricID  int    `json:"metric_id"`
+	Time      string `json:"time"`
+	Value     int    `json:"value"`
+}
+
 type accountStatusRecord struct {
 	NotebookCount int `json:"notebook_count,omitempty"`
 	NotebookLimit int `json:"notebook_limit,omitempty"`
