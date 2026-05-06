@@ -306,7 +306,7 @@ func (c *LabsTailwindOrchestrationServiceClient) DeleteSources(ctx context.Conte
 func (c *LabsTailwindOrchestrationServiceClient) DiscoverSources(ctx context.Context, req *notebooklmv1alpha1.DiscoverSourcesRequest) (*notebooklmv1alpha1.DiscoverSourcesResponse, error) {
 	// Build the RPC call
 	call := rpc.Call{
-		ID:         "qXyaNe",
+		ID:         rpc.RPCDiscoverSources,
 		NotebookID: rpc.NotebookIDFromMessage(req),
 		Args:       method.EncodeDiscoverSourcesArgs(req),
 	}

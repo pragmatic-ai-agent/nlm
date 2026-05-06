@@ -8,7 +8,7 @@ import (
 // GENERATION_BEHAVIOR: append
 
 // EncodeDiscoverSourcesArgs encodes arguments for LabsTailwindOrchestrationService.DiscoverSources
-// RPC ID: qXyaNe
+// RPC ID: Es3dTe
 // Argument format: [%project_id%, %query%]
 func EncodeDiscoverSourcesArgs(req *notebooklmv1alpha1.DiscoverSourcesRequest) []interface{} {
 	// Using generalized argument encoder
