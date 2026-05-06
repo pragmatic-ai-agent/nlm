@@ -1,6 +1,8 @@
 package beprotojson
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -214,8 +216,11 @@ func TestUnmarshalGetNotesResponse(t *testing.T) {
 
 func TestUnmarshalFeaturedProjectsResponse(t *testing.T) {
 	got := &pb.ListFeaturedProjectsResponse{}
-	json := `[[["Archive 1945", [], "34510332-d39c-499e-882d-e48393d612cd", "🏛️", null, null, null, [[2, "Use sources only"], [4]], null, null, null, null, null, null, [false, [["https://example.com/cover.png"]], "The Economist", "Witness history as it unfolded in 1945."]]]]`
-	if err := Unmarshal([]byte(json), got); err != nil {
+	data, err := os.ReadFile(filepath.Join("testdata", "ub2Bae_list_featured_response.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Unmarshal(data, got); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
@@ -223,7 +228,7 @@ func TestUnmarshalFeaturedProjectsResponse(t *testing.T) {
 		Projects: []*pb.FeaturedProject{{
 			Title:     "Archive 1945",
 			ProjectId: "34510332-d39c-499e-882d-e48393d612cd",
-			Emoji:     "🏛️",
+			Emoji:     "library",
 			ChatbotConfig: &pb.ChatbotConfig{
 				Goal: &pb.ChatGoalConfig{
 					Goal:         2,
