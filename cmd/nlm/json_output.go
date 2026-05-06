@@ -36,6 +36,14 @@ type featuredProjectRecord struct {
 	SourceCount int    `json:"source_count"`
 }
 
+type accountStatusRecord struct {
+	NotebookCount int `json:"notebook_count,omitempty"`
+	NotebookLimit int `json:"notebook_limit,omitempty"`
+	SourceLimit   int `json:"source_limit,omitempty"`
+	UploadLimit   int `json:"upload_limit,omitempty"`
+	Tier          int `json:"tier,omitempty"`
+}
+
 type artifactListRecord struct {
 	ArtifactID  string `json:"artifact_id"`
 	Type        string `json:"type"`

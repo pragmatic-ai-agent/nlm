@@ -19,14 +19,14 @@ import (
 //	6 transient server / network / 5xx / rate limit
 //	7 resource busy / still generating (poll-in-progress)
 const (
-	exitSuccess          = 0
-	exitGeneric          = 1
-	exitBadArgs          = 2
-	exitAuth             = 3
-	exitNotFound         = 4
-	exitPrecondition     = 5
-	exitTransient        = 6
-	exitBusy             = 7
+	exitSuccess      = 0
+	exitGeneric      = 1
+	exitBadArgs      = 2
+	exitAuth         = 3
+	exitNotFound     = 4
+	exitPrecondition = 5
+	exitTransient    = 6
+	exitBusy         = 7
 )
 
 // exitCodeName returns a short, stable, machine-parseable name for a
@@ -76,7 +76,8 @@ func exitCodeFor(err error) int {
 	// Typed api-layer sentinels for states batchexecute cannot disambiguate.
 	switch {
 	case errors.Is(err, api.ErrSourceCapReached),
-		errors.Is(err, api.ErrSourceTooLarge):
+		errors.Is(err, api.ErrSourceTooLarge),
+		errors.Is(err, api.ErrNotebookCapReached):
 		return exitPrecondition
 	case errors.Is(err, api.ErrArtifactGenerating),
 		errors.Is(err, api.ErrResearchPolling):

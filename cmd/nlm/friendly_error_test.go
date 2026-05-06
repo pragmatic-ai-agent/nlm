@@ -53,7 +53,7 @@ func TestFriendlyError(t *testing.T) {
 					Description: "The request does not have valid authentication credentials.",
 				},
 			}),
-			wantContains:   []string{"get project", "valid authentication credentials"},
+			wantContains:   []string{"get project", "nlm auth"},
 			wantNotContain: []string{"API error 16", "error 16:"},
 		},
 		{
@@ -81,6 +81,12 @@ func TestFriendlyError(t *testing.T) {
 			// label users mistook size failures for.
 			wantContains:   []string{"add text source", "per-request size limit", "nlm sync"},
 			wantNotContain: []string{"notebook source cap reached", "source exceeds per-request size limit:"},
+		},
+		{
+			name:           "notebook cap sentinel hides wrapper noise",
+			err:            fmt.Errorf("create project: %w: %w", api.ErrNotebookCapReached, errors.New("invalid arguments")),
+			wantContains:   []string{"create project", "notebook limit"},
+			wantNotContain: []string{"notebook cap reached", "invalid arguments"},
 		},
 		{
 			name:         "plain error passes through unchanged",

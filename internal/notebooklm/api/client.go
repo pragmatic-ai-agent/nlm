@@ -188,6 +188,11 @@ func (c *Client) CreateProject(title string, emoji string) (*Notebook, error) {
 
 	project, err := c.orchestrationService.CreateProject(context.Background(), req)
 	if err != nil {
+		if status, statusErr := c.GetAccountStatus(); statusErr == nil && status.NotebookLimit > 0 {
+			if projects, listErr := c.ListRecentlyViewedProjects(); listErr == nil && len(projects) >= status.NotebookLimit {
+				return nil, fmt.Errorf("create project: %w: %w", ErrNotebookCapReached, err)
+			}
+		}
 		return nil, fmt.Errorf("create project: %w", err)
 	}
 	return project, nil

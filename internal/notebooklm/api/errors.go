@@ -34,6 +34,12 @@ var (
 	// Maps to exit code 5 (permanent precondition).
 	ErrSourceTooLarge = errors.New("source exceeds per-request size limit")
 
+	// ErrNotebookCapReached indicates CreateProject was rejected because the
+	// account is at the NotebookLM notebook cap. ZwVcOc currently reports a
+	// limit of 500 notebooks, but create failures still arrive as generic RPC
+	// errors, so callers should wrap this only after checking account status.
+	ErrNotebookCapReached = errors.New("notebook cap reached")
+
 	// ErrArtifactGenerating indicates an artifact is still in the
 	// ARTIFACT_STATUS_GENERATING transient state and a caller that wanted a
 	// finished artifact should retry. Maps to exit code 7 (resource busy).

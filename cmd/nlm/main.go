@@ -28,7 +28,6 @@ import (
 	"github.com/tmc/nlm/internal/notebooklm/api"
 	nlmsync "github.com/tmc/nlm/internal/sync"
 	"golang.org/x/term"
-	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 // Global flags
@@ -312,6 +311,9 @@ func friendlyError(err error) string {
 	if errors.Is(err, api.ErrSourceTooLarge) {
 		return friendlyTypedError(err, api.ErrSourceTooLarge, "source exceeds the per-request size limit; split it, or use `nlm sync` / `nlm sync-pack` which chunk automatically")
 	}
+	if errors.Is(err, api.ErrNotebookCapReached) {
+		return friendlyTypedError(err, api.ErrNotebookCapReached, "account is at the notebook limit; delete unused notebooks before creating more")
+	}
 	var apiErr *batchexecute.APIError
 	if !errors.As(err, &apiErr) {
 		return err.Error()
@@ -351,7 +353,11 @@ func friendlyTypedError(err, target error, msg string) string {
 		full = strings.TrimRight(full, ": ")
 	}
 
-	full = strings.TrimSuffix(full, target.Error())
+	if i := strings.Index(full, target.Error()); i >= 0 {
+		full = full[:i]
+	} else {
+		full = strings.TrimSuffix(full, target.Error())
+	}
 	full = strings.TrimRight(full, ": ")
 
 	if full == "" {
@@ -3495,23 +3501,42 @@ func submitFeedback(c *api.Client, message string) error {
 // 'email-notifications' (true/false).
 func runAccount(c *api.Client, args []string) error {
 	if len(args) == 0 {
-		acct, err := c.GetOrCreateAccount()
+		status, err := c.GetAccountStatus()
 		if err != nil {
 			return err
 		}
+		notebooks, err := c.ListRecentlyViewedProjects()
+		if err != nil {
+			return fmt.Errorf("list notebooks for account status: %w", err)
+		}
+		notebookCount := len(notebooks)
 		if jsonOutput {
-			data, mErr := json.MarshalIndent(acct, "", "  ")
+			rec := accountStatusRecord{
+				NotebookCount: notebookCount,
+				NotebookLimit: status.NotebookLimit,
+				SourceLimit:   status.SourceLimit,
+				UploadLimit:   status.UploadLimit,
+				Tier:          status.Tier,
+			}
+			data, mErr := json.MarshalIndent(rec, "", "  ")
 			if mErr != nil {
 				return mErr
 			}
 			fmt.Println(string(data))
 			return nil
 		}
-		fmt.Printf("Account: %s\n", acct.GetAccountId())
-		fmt.Printf("Email:   %s\n", acct.GetEmail())
-		if s := acct.GetSettings(); s != nil {
-			fmt.Printf("Default emoji:        %s\n", s.GetDefaultProjectEmoji())
-			fmt.Printf("Email notifications:  %v\n", s.GetEmailNotifications())
+		fmt.Printf("Notebook count: %d\n", notebookCount)
+		if status.NotebookLimit > 0 {
+			fmt.Printf("Notebook limit: %d\n", status.NotebookLimit)
+		}
+		if status.SourceLimit > 0 {
+			fmt.Printf("Source limit:   %d\n", status.SourceLimit)
+		}
+		if status.UploadLimit > 0 {
+			fmt.Printf("Upload limit:   %d\n", status.UploadLimit)
+		}
+		if status.Tier > 0 {
+			fmt.Printf("Tier:           %d\n", status.Tier)
 		}
 		return nil
 	}
@@ -3521,34 +3546,12 @@ func runAccount(c *api.Client, args []string) error {
 	if len(args) != 3 {
 		return fmt.Errorf("account set: usage 'nlm account set <key> <value>'")
 	}
-	key, value := args[1], args[2]
-	acct, err := c.GetOrCreateAccount()
-	if err != nil {
-		return fmt.Errorf("read current account: %w", err)
-	}
-	if acct.Settings == nil {
-		acct.Settings = &pb.AccountSettings{}
-	}
-	var maskPath string
-	switch key {
-	case "emoji":
-		acct.Settings.DefaultProjectEmoji = value
-		maskPath = "settings.default_project_emoji"
-	case "email-notifications":
-		v := strings.EqualFold(value, "true") || value == "1"
-		acct.Settings.EmailNotifications = v
-		maskPath = "settings.email_notifications"
+	switch args[1] {
+	case "emoji", "email-notifications":
+		return fmt.Errorf("account set %s is not supported: NotebookLM changed the account wire schema", args[1])
 	default:
-		return fmt.Errorf("account set: unknown key %q (try 'emoji' or 'email-notifications')", key)
+		return fmt.Errorf("account set: unknown key %q (try 'emoji' or 'email-notifications')", args[1])
 	}
-	mask := &fieldmaskpb.FieldMask{Paths: []string{maskPath}}
-	updated, err := c.MutateAccount(acct, mask)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stderr, "Account updated: %s=%s\n", key, value)
-	_ = updated
-	return nil
 }
 
 func shareNotebookPrivate(c *api.Client, notebookID string) error {
