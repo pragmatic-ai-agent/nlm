@@ -9,17 +9,17 @@ This file was re-audited against the current tree on 2026-04-21. It tracks
 only gaps that still matter after checking the live CLI, API, and MCP code
 paths.
 
-### 1. Analytics remains experimental and misleading
+### 1. Generated analytics proto remains scalar
 
 `AUrzMb` returns time-series metrics, but the generated `ProjectAnalytics`
-shape still expects scalar counts. The command is intentionally hidden
-behind `--experimental` in `cmd/nlm/commands.go`, and `cmd/nlm/main.go`
-prints a warning that the output is unreliable.
+shape still expects scalar counts. The public API and CLI now bypass that
+generated response model and parse the fixture-backed time-series shape into
+typed metric rows.
 
-Status: open, not HAR-blocked.
+Status: low-priority generated-proto cleanup, not HAR-blocked.
 
-Next step: redesign the response model and CLI UX around metric series, not
-another encoder tweak.
+Next step: decide whether the generated proto should grow metric-series
+messages or whether AUrzMb should remain a typed API-only path.
 
 ### 2. Video download is still manual-fallback only
 
@@ -69,14 +69,14 @@ service, and the `ChatGoal` enum values may not match server expectations.
 
 Status: open. Low usage; verify when there is a real caller.
 
-### 6. Auth-expiry mid-session gives unclear errors
+### 6. Auth-expiry mid-session auto-refresh
 
-When the session cookies expire during a long-running command, the user
-sees an opaque error rather than a clear "re-run `nlm auth`" prompt.
-Consider auto-refresh on 401/Unauthenticated responses, or at minimum
-detect the failure mode and surface a targeted message.
+When the session cookies expire during a long-running command, the CLI now
+detects auth-shaped API and transport failures and surfaces a targeted
+"run `nlm auth`" message.
 
-Status: open, UX polish.
+Status: low-priority polish. The remaining possible improvement is automatic
+refresh after a 401/Unauthenticated response.
 
 ## Truly HAR-Blocked
 
@@ -99,7 +99,8 @@ Status: HAR-blocked for semantics only. The current fallback is safe.
 
 ## Next Work
 
-1. Keep `analytics` experimental until its proto and CLI UX are redesigned.
+1. Decide whether AUrzMb should stay typed API-only or get generated proto
+   metric-series messages.
 2. Decide whether `video download` should keep the current manual-fallback
    UX or get a real CDN capture and a browser-assisted path.
 3. Remove dead generated RPC stubs so future audits do not
