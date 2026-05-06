@@ -64,6 +64,13 @@ var (
 // The type is exposed (vs. an unexported struct) so cmd/nlm can extract
 // the numbers via errors.As. errors.Is(err, ErrNotebookCapReached) still
 // matches, so the exit-code classifier is unaffected.
+//
+// Count comes from ListRecentlyViewedProjects taken just after the
+// CreateProject failure, so it can lag the server's true notebook count —
+// most visibly right after a batch of deletes, where the message may still
+// read "492/500" for a few seconds while the server's index catches up.
+// The classification itself is unaffected (the wrapping happened because
+// CreateProject already failed); only the displayed numbers are advisory.
 type NotebookCapError struct {
 	Count int
 	Limit int
