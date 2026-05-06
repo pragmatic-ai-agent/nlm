@@ -89,6 +89,45 @@ func TestFriendlyError(t *testing.T) {
 			wantNotContain: []string{"notebook cap reached", "invalid arguments"},
 		},
 		{
+			// The realistic shape produced by the api-layer near-cap heuristic
+			// in classifyCreateProjectError: a *batchexecute.APIError wrapped
+			// behind ErrNotebookCapReached. The rewriter must strip both the
+			// sentinel literal AND the "API error N (Type): msg" suffix so the
+			// user sees only the actionable advice.
+			name: "notebook cap sentinel strips real APIError suffix",
+			err: fmt.Errorf("create project: %w: %w",
+				api.ErrNotebookCapReached,
+				&batchexecute.APIError{
+					ErrorCode: &batchexecute.ErrorCode{
+						Code:    3,
+						Type:    batchexecute.ErrorTypeInvalidInput,
+						Message: "Invalid argument",
+					},
+				}),
+			wantContains:   []string{"create project", "notebook limit", "delete unused notebooks"},
+			wantNotContain: []string{"notebook cap reached", "API error 3", "InvalidInput"},
+		},
+		{
+			// When the error chain carries a *NotebookCapError, the user-
+			// facing message must show the actual numbers ("492/500") so
+			// callers don't have to run `nlm account` to see how close they
+			// were. This is what the api layer produces in practice.
+			name: "notebook cap error includes count and limit",
+			err: fmt.Errorf("create project: %w", &api.NotebookCapError{
+				Count: 492,
+				Limit: 500,
+				Err: &batchexecute.APIError{
+					ErrorCode: &batchexecute.ErrorCode{
+						Code:    3,
+						Type:    batchexecute.ErrorTypeInvalidInput,
+						Message: "Invalid argument",
+					},
+				},
+			}),
+			wantContains:   []string{"create project", "492/500", "delete unused notebooks"},
+			wantNotContain: []string{"notebook cap reached", "API error 3"},
+		},
+		{
 			name:         "plain error passes through unchanged",
 			err:          errors.New("open file: no such file"),
 			wantContains: []string{"open file: no such file"},

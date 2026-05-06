@@ -188,14 +188,87 @@ func (c *Client) CreateProject(title string, emoji string) (*Notebook, error) {
 
 	project, err := c.orchestrationService.CreateProject(context.Background(), req)
 	if err != nil {
-		if status, statusErr := c.GetAccountStatus(); statusErr == nil && status.NotebookLimit > 0 {
-			if projects, listErr := c.ListRecentlyViewedProjects(); listErr == nil && len(projects) >= status.NotebookLimit {
-				return nil, fmt.Errorf("create project: %w: %w", ErrNotebookCapReached, err)
-			}
+		count, limit := -1, -1
+		if status, statusErr := c.GetAccountStatus(); statusErr == nil {
+			limit = status.NotebookLimit
 		}
-		return nil, fmt.Errorf("create project: %w", err)
+		if projects, listErr := c.ListRecentlyViewedProjects(); listErr == nil {
+			count = len(projects)
+		}
+		return nil, classifyCreateProjectError(err, count, limit)
 	}
 	return project, nil
+}
+
+// nearNotebookCapTolerance is the gap below NotebookLimit at which a generic
+// CreateProject failure (Invalid argument / Failed precondition with no
+// machine-readable details) is reclassified as ErrNotebookCapReached.
+//
+// ListRecentlyViewedProjects underreports the server's true notebook count —
+// it omits archived, shared-from, and otherwise-not-recently-touched
+// notebooks. An account that displays "492 / 500" in `nlm account` can still
+// be at the server-side cap. The web UI surfaces an explicit "limit reached"
+// banner; batchexecute returns a bare code-3 with no diagnostic. The
+// tolerance trades a small false-positive risk (a malformed title at 481/500
+// gets blamed on quota) for catching the much more common true-positive
+// (creates fail near the cap because the cap is full).
+const nearNotebookCapTolerance = 20
+
+// classifyCreateProjectError wraps a CreateProject failure with
+// ErrNotebookCapReached when the surrounding evidence — current notebook
+// count and account limit — points at quota exhaustion. The exact wire
+// signal is unreliable (see nearNotebookCapTolerance) so we combine the
+// bare error code with an account-state heuristic.
+//
+// count and limit are -1 when unavailable (e.g. fetching account status
+// failed); in that case we leave the error unwrapped rather than guess.
+func classifyCreateProjectError(err error, count, limit int) error {
+	if err == nil {
+		return nil
+	}
+	wrapCap := func() error {
+		return fmt.Errorf("create project: %w", &NotebookCapError{
+			Count: count,
+			Limit: limit,
+			Err:   err,
+		})
+	}
+	if limit > 0 && count >= 0 {
+		// Strict cap: the client-side count is already at or above the
+		// reported limit. ListRecentlyViewedProjects underreports, so this
+		// path is rare in practice but unambiguous when it triggers.
+		if count >= limit {
+			return wrapCap()
+		}
+		// Heuristic cap: the client-side count is within a small tolerance
+		// of the limit AND the underlying error is the polysemic "bad args
+		// / failed precondition" code that the server returns for quota
+		// exhaustion (alongside genuinely-malformed input). The web UI
+		// distinguishes these via UI state we don't have access to here.
+		if count >= limit-nearNotebookCapTolerance && isLikelyQuotaError(err) {
+			return wrapCap()
+		}
+	}
+	return fmt.Errorf("create project: %w", err)
+}
+
+// isLikelyQuotaError reports whether err looks like the bare batchexecute
+// error the server returns for CreateProject when the account is at the
+// notebook cap. Code 3 ("Invalid argument") is the actually-observed code;
+// code 9 ("Failed precondition") is included because the wire layer maps
+// some quota states there as well. Either code can also indicate genuine
+// bad input — the caller must combine this with out-of-band evidence
+// (account count) before classifying.
+func isLikelyQuotaError(err error) bool {
+	var apiErr *batchexecute.APIError
+	if !errors.As(err, &apiErr) || apiErr.ErrorCode == nil {
+		return false
+	}
+	switch apiErr.ErrorCode.Code {
+	case 3, 9:
+		return true
+	}
+	return false
 }
 
 func (c *Client) GetProject(projectID string) (*Notebook, error) {

@@ -312,7 +312,12 @@ func friendlyError(err error) string {
 		return friendlyTypedError(err, api.ErrSourceTooLarge, "source exceeds the per-request size limit; split it, or use `nlm sync` / `nlm sync-pack` which chunk automatically")
 	}
 	if errors.Is(err, api.ErrNotebookCapReached) {
-		return friendlyTypedError(err, api.ErrNotebookCapReached, "account is at the notebook limit; delete unused notebooks before creating more")
+		msg := "account is at the notebook limit; delete unused notebooks before creating more"
+		var capErr *api.NotebookCapError
+		if errors.As(err, &capErr) && capErr.Limit > 0 && capErr.Count >= 0 {
+			msg = fmt.Sprintf("account is at the notebook limit (%d/%d); delete unused notebooks before creating more", capErr.Count, capErr.Limit)
+		}
+		return friendlyTypedError(err, api.ErrNotebookCapReached, msg)
 	}
 	var apiErr *batchexecute.APIError
 	if !errors.As(err, &apiErr) {

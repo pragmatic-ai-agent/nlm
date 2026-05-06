@@ -38,6 +38,10 @@ var (
 	// account is at the NotebookLM notebook cap. ZwVcOc currently reports a
 	// limit of 500 notebooks, but create failures still arrive as generic RPC
 	// errors, so callers should wrap this only after checking account status.
+	// To attach the observed count/limit so the user-facing message can
+	// surface "492/500", use NotebookCapError instead — it satisfies
+	// errors.Is(err, ErrNotebookCapReached) so existing classifiers still
+	// match.
 	ErrNotebookCapReached = errors.New("notebook cap reached")
 
 	// ErrArtifactGenerating indicates an artifact is still in the
@@ -50,3 +54,34 @@ var (
 	// code 7 (resource busy).
 	ErrResearchPolling = errors.New("research is still in progress")
 )
+
+// NotebookCapError carries the observed account state alongside an
+// ErrNotebookCapReached classification so the user-facing rewriter can
+// surface the actual numbers ("492/500") instead of a generic "at the
+// notebook limit" message. Count and Limit are -1 when the value was not
+// available at classification time.
+//
+// The type is exposed (vs. an unexported struct) so cmd/nlm can extract
+// the numbers via errors.As. errors.Is(err, ErrNotebookCapReached) still
+// matches, so the exit-code classifier is unaffected.
+type NotebookCapError struct {
+	Count int
+	Limit int
+	Err   error
+}
+
+func (e *NotebookCapError) Error() string {
+	if e.Err != nil {
+		return ErrNotebookCapReached.Error() + ": " + e.Err.Error()
+	}
+	return ErrNotebookCapReached.Error()
+}
+
+func (e *NotebookCapError) Unwrap() error { return e.Err }
+
+// Is matches both the sentinel (so existing errors.Is checks pass) and
+// other *NotebookCapError values (so callers can introspect the type
+// without losing the count/limit when re-wrapping).
+func (e *NotebookCapError) Is(target error) bool {
+	return target == ErrNotebookCapReached
+}
