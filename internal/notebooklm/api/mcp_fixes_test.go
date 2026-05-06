@@ -25,6 +25,9 @@ func TestParseNotesResponse(t *testing.T) {
 	if got := notes[0].GetTitle(); got != "Test Note" {
 		t.Fatalf("notes[0].title = %q, want %q", got, "Test Note")
 	}
+	if got := notes[0].GetContentText(); got != "hello" {
+		t.Fatalf("notes[0].content = %q, want %q", got, "hello")
+	}
 	if got := notes[1].GetTitle(); got != "Second Note" {
 		t.Fatalf("notes[1].title = %q, want %q", got, "Second Note")
 	}

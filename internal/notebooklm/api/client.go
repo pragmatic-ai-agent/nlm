@@ -1335,29 +1335,34 @@ func (c *Client) DeleteNotes(projectID string, noteIDs []string) error {
 }
 
 func (c *Client) GetNotes(projectID string) ([]*Note, error) {
-	req := &pb.GetNotesRequest{ProjectId: projectID}
-	response, err := c.orchestrationService.GetNotes(context.Background(), req)
-	if err == nil {
-		return response.Notes, nil
-	}
-	if c.config.Debug {
-		fmt.Printf("GetNotes orchestration parse failed, falling back to raw parser: %v\n", err)
-	}
-
-	resp, rpcErr := c.rpc.Do(rpc.Call{
+	var rawErr error
+	resp, err := c.rpc.Do(rpc.Call{
 		ID:         rpc.RPCGetNotes,
 		NotebookID: projectID,
-		Args:       []interface{}{projectID, nil, nil, []interface{}{2}},
+		Args:       []interface{}{projectID},
 	})
-	if rpcErr != nil {
-		return nil, fmt.Errorf("get notes: %w", err)
+	if err == nil {
+		notes, parseErr := parseNotesResponse(resp)
+		if parseErr == nil {
+			return notes, nil
+		}
+		if c.config.Debug {
+			fmt.Printf("GetNotes raw parser failed, falling back to generated decoder: %v\n", parseErr)
+		}
+		rawErr = parseErr
+	} else {
+		rawErr = err
+	}
+	if c.config.Debug {
+		fmt.Printf("GetNotes raw path failed, falling back to generated decoder: %v\n", rawErr)
 	}
 
-	notes, parseErr := parseNotesResponse(resp)
-	if parseErr != nil {
-		return nil, fmt.Errorf("get notes: %w", err)
+	req := &pb.GetNotesRequest{ProjectId: projectID}
+	response, rpcErr := c.orchestrationService.GetNotes(context.Background(), req)
+	if rpcErr != nil {
+		return nil, fmt.Errorf("get notes: %w", rawErr)
 	}
-	return notes, nil
+	return response.Notes, nil
 }
 
 func parseNotesResponse(resp []byte) ([]*Note, error) {
