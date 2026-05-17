@@ -910,11 +910,7 @@ func (c *Client) uploadFileSource(projectID, filename string, content []byte) (s
 	return sourceID, nil
 }
 
-// startResumableUpload initiates a resumable upload session and returns the upload URL.
-func (c *Client) startResumableUpload(projectID, filename, sourceID string, contentLength int) (string, error) {
-	// Build metadata payload: base64-encoded JSON.
-	// Field order matches Chrome's upload (PROJECT_ID, SOURCE_NAME, SOURCE_ID);
-	// Go's map marshaling sorts keys alphabetically, which Scotty rejects with 500.
+func buildSourceUploadMetadata(projectID, filename, sourceID string) ([]byte, error) {
 	metadata := struct {
 		ProjectID  string `json:"PROJECT_ID"`
 		SourceName string `json:"SOURCE_NAME"`
@@ -924,37 +920,44 @@ func (c *Client) startResumableUpload(projectID, filename, sourceID string, cont
 		SourceName: filename,
 		SourceID:   sourceID,
 	}
-	metadataJSON, err := json.Marshal(metadata)
+	return json.Marshal(metadata)
+}
+
+// startResumableUpload initiates a resumable upload session and returns the upload URL.
+func (c *Client) startResumableUpload(projectID, filename, sourceID string, contentLength int) (string, error) {
+	// Build metadata payload. Field order matches Chrome's upload
+	// (PROJECT_ID, SOURCE_NAME, SOURCE_ID); Go's map marshaling sorts keys
+	// alphabetically, which Scotty rejects with 500.
+	metadataJSON, err := buildSourceUploadMetadata(projectID, filename, sourceID)
 	if err != nil {
 		return "", fmt.Errorf("marshal metadata: %w", err)
 	}
-	metadataB64 := base64.StdEncoding.EncodeToString(metadataJSON)
 
 	uploadInitURL := "https://notebooklm.google.com/upload/_/?authuser=" + c.authUserOrDefault()
-	req, err := http.NewRequest("POST", uploadInitURL, strings.NewReader(metadataB64))
+	req, err := http.NewRequest("POST", uploadInitURL, bytes.NewReader(metadataJSON))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
 
 	// Required headers for resumable upload initiation per Scotty's protocol.
-	// Matches a fresh Chrome HAR: no X-Goog-Upload-Header-Content-Type sent.
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
 	req.Header.Set("X-Goog-Upload-Command", "start")
 	req.Header.Set("X-Goog-Upload-Protocol", "resumable")
 	req.Header.Set("X-Goog-Upload-Header-Content-Length", fmt.Sprintf("%d", contentLength))
 	req.Header.Set("X-Goog-AuthUser", c.authUserOrDefault())
 
-	// Upload uses cookies only — no Authorization, Origin, or X-Same-Domain headers
+	// Upload uses cookies only; no Authorization or X-Same-Domain headers.
+	// The current web upload init includes Origin and Referer.
 	if cookies := c.rpc.Config.Cookies; cookies != "" {
 		req.Header.Set("Cookie", cookies)
 	}
+	req.Header.Set("Origin", "https://notebooklm.google.com")
 	req.Header.Set("Referer", "https://notebooklm.google.com/")
 	setChromeClientHints(req.Header)
 
 	if c.config.Debug {
 		fmt.Fprintf(os.Stderr, "DEBUG: upload init URL: %s\n", uploadInitURL)
-		fmt.Fprintf(os.Stderr, "DEBUG: upload init body: %s\n", metadataB64)
-		fmt.Fprintf(os.Stderr, "DEBUG: upload init decoded: %s\n", string(metadataJSON))
+		fmt.Fprintf(os.Stderr, "DEBUG: upload init body: %s\n", string(metadataJSON))
 		for k, v := range req.Header {
 			if k != "Cookie" { // Don't dump cookies
 				fmt.Fprintf(os.Stderr, "DEBUG: upload init header %s: %v\n", k, v)
@@ -1149,12 +1152,11 @@ func (c *Client) AddSourceFromFile(projectID string, filepath string, contentTyp
 func (c *Client) AddSourceFromURL(projectID string, url string) (string, error) {
 	// Check if it's a YouTube URL first
 	if isYouTubeURL(url) {
-		videoID, err := extractYouTubeVideoID(url)
-		if err != nil {
+		if _, err := extractYouTubeVideoID(url); err != nil {
 			return "", fmt.Errorf("invalid YouTube URL: %w", err)
 		}
 		// Use dedicated YouTube method
-		return c.AddYouTubeSource(projectID, videoID)
+		return c.AddYouTubeSource(projectID, url)
 	}
 
 	// Regular URL handling
@@ -1183,26 +1185,19 @@ func (c *Client) AddSourceFromURL(projectID string, url string) (string, error) 
 	return sourceID, nil
 }
 
-func (c *Client) AddYouTubeSource(projectID, videoID string) (string, error) {
+func (c *Client) AddYouTubeSource(projectID, youtubeURL string) (string, error) {
+	sourceURL, err := normalizeYouTubeSourceURL(youtubeURL)
+	if err != nil {
+		return "", err
+	}
+
 	if c.rpc.Config.Debug {
 		fmt.Printf("=== AddYouTubeSource ===\n")
 		fmt.Printf("Project ID: %s\n", projectID)
-		fmt.Printf("Video ID: %s\n", videoID)
+		fmt.Printf("YouTube URL: %s\n", sourceURL)
 	}
 
-	// Modified payload structure for YouTube
-	payload := []interface{}{
-		[]interface{}{
-			[]interface{}{
-				nil,                                     // content
-				nil,                                     // title
-				videoID,                                 // video ID (not in array)
-				nil,                                     // unused
-				pb.SourceType_SOURCE_TYPE_YOUTUBE_VIDEO, // source type
-			},
-		},
-		projectID,
-	}
+	payload := buildYouTubeSourcePayload(projectID, sourceURL)
 
 	if c.rpc.Config.Debug {
 		fmt.Printf("\nPayload Structure:\n")
@@ -1230,6 +1225,29 @@ func (c *Client) AddYouTubeSource(projectID, videoID string) (string, error) {
 		return "", fmt.Errorf("extract source ID: %w", err)
 	}
 	return sourceID, nil
+}
+
+func buildYouTubeSourcePayload(projectID, youtubeURL string) []interface{} {
+	return []interface{}{
+		[]interface{}{
+			[]interface{}{
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				[]string{youtubeURL},
+				nil,
+				nil,
+				1,
+			},
+		},
+		projectID,
+		[]int{2},
+		[]interface{}{1, nil, nil, nil, nil, nil, nil, nil, nil, nil, []int{1}},
+	}
 }
 
 // wrapSourceAddError wraps an AddSource* failure with the operation name. It
@@ -4837,8 +4855,17 @@ func findStringMatching(v interface{}, match func(string) bool) string {
 }
 
 // Helper functions to identify and extract YouTube video IDs
-func isYouTubeURL(url string) bool {
-	return strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be")
+func isYouTubeURL(urlStr string) bool {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return false
+	}
+	return isYouTubeHost(u.Hostname())
+}
+
+func isYouTubeHost(host string) bool {
+	host = strings.ToLower(host)
+	return host == "youtu.be" || host == "youtube.com" || strings.HasSuffix(host, ".youtube.com")
 }
 
 func extractYouTubeVideoID(urlStr string) (string, error) {
@@ -4847,15 +4874,37 @@ func extractYouTubeVideoID(urlStr string) (string, error) {
 		return "", err
 	}
 
-	if u.Host == "youtu.be" {
+	host := strings.ToLower(u.Hostname())
+	if host == "youtu.be" {
 		return strings.TrimPrefix(u.Path, "/"), nil
 	}
 
-	if strings.Contains(u.Host, "youtube.com") && u.Path == "/watch" {
+	if (host == "youtube.com" || strings.HasSuffix(host, ".youtube.com")) && u.Path == "/watch" {
 		return u.Query().Get("v"), nil
 	}
 
 	return "", fmt.Errorf("unsupported YouTube URL format")
+}
+
+func normalizeYouTubeSourceURL(input string) (string, error) {
+	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
+		videoID, err := extractYouTubeVideoID(input)
+		if err != nil {
+			return "", fmt.Errorf("invalid YouTube URL: %w", err)
+		}
+		if videoID == "" {
+			return "", fmt.Errorf("invalid YouTube URL: missing video ID")
+		}
+		return input, nil
+	}
+
+	if input == "" {
+		return "", fmt.Errorf("invalid YouTube video ID: empty")
+	}
+	if strings.ContainsAny(input, "/?&= ") {
+		return "", fmt.Errorf("invalid YouTube video ID: %q", input)
+	}
+	return "https://www.youtube.com/watch?v=" + input, nil
 }
 
 // SetInstructions sets the notebook's custom chat instructions (system prompt).
