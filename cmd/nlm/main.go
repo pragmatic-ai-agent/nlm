@@ -1128,7 +1128,11 @@ func (a *syncClientAdapter) AttachLabelSource(ctx context.Context, notebookID, l
 	return a.client.AttachLabelSource(notebookID, labelID, sourceID)
 }
 
-func removeSource(c *api.Client, notebookID, sourceArg string) error {
+type sourceDeleteClient interface {
+	DeleteSources(projectID string, sourceIDs []string) error
+}
+
+func removeSource(c sourceDeleteClient, notebookID, sourceArg string) error {
 	sourceIDs, err := resolveIDList(sourceArg)
 	if err != nil {
 		return fmt.Errorf("source IDs: %w", err)

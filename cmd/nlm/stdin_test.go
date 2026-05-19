@@ -66,6 +66,122 @@ func TestResolveIDList(t *testing.T) {
 
 // Note: resolveIDList("-") requires non-TTY stdin; exercised at integration level.
 
+type fakeSourceDeleteClient struct {
+	notebookID string
+	calls      [][]string
+	err        error
+}
+
+func (f *fakeSourceDeleteClient) DeleteSources(notebookID string, ids []string) error {
+	f.notebookID = notebookID
+	f.calls = append(f.calls, append([]string(nil), ids...))
+	return f.err
+}
+
+func TestRemoveSourceReadsStdinWithYes(t *testing.T) {
+	oldYes := yes
+	yes = true
+	t.Cleanup(func() { yes = oldYes })
+
+	oldOpen := openControllingTTY
+	openControllingTTY = func() (io.ReadWriteCloser, error) {
+		t.Fatal("opened controlling tty with -y set")
+		return nil, errors.New("unexpected tty")
+	}
+	t.Cleanup(func() { openControllingTTY = oldOpen })
+
+	oldStdin := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteString("src-1 Title\n# comment\n\nsrc-2\nsrc-3\tmore\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		r.Close()
+	})
+
+	fc := new(fakeSourceDeleteClient)
+	if err := removeSource(fc, "nb-1", "-"); err != nil {
+		t.Fatalf("removeSource: %v", err)
+	}
+	if fc.notebookID != "nb-1" {
+		t.Fatalf("notebookID = %q, want nb-1", fc.notebookID)
+	}
+	want := [][]string{{"src-1", "src-2", "src-3"}}
+	if !reflect.DeepEqual(fc.calls, want) {
+		t.Fatalf("DeleteSources calls = %#v, want %#v", fc.calls, want)
+	}
+}
+
+func TestRemoveSourcePipedStdinRequiresYesWithoutTTY(t *testing.T) {
+	oldYes := yes
+	yes = false
+	t.Cleanup(func() { yes = oldYes })
+
+	oldOpen := openControllingTTY
+	openControllingTTY = func() (io.ReadWriteCloser, error) {
+		return nil, errors.New("no tty")
+	}
+	t.Cleanup(func() { openControllingTTY = oldOpen })
+
+	oldStdin := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteString("src-1\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		r.Close()
+	})
+
+	oldStderr := os.Stderr
+	errR, errW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = errW
+	t.Cleanup(func() {
+		os.Stderr = oldStderr
+		errR.Close()
+		errW.Close()
+	})
+
+	fc := new(fakeSourceDeleteClient)
+	err = removeSource(fc, "nb-1", "-")
+	if err == nil || !strings.Contains(err.Error(), "operation cancelled") {
+		t.Fatalf("removeSource error = %v, want operation cancelled", err)
+	}
+	if len(fc.calls) != 0 {
+		t.Fatalf("DeleteSources calls = %#v, want none", fc.calls)
+	}
+
+	if err := errW.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = oldStderr
+	msg, err := io.ReadAll(errR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(msg), "pass -y to confirm") {
+		t.Fatalf("stderr = %q, want pass -y hint", msg)
+	}
+}
+
 type fakeTTY struct {
 	r *strings.Reader
 	w bytes.Buffer

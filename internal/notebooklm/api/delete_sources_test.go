@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -34,14 +35,16 @@ func TestDeleteSourcesUsesNotebookContext(t *testing.T) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader(GenerateMockResponse("tGMBJ", []interface{}{}))),
+				Body:       io.NopCloser(strings.NewReader(deleteSourcesResponse(t, []interface{}{}))),
 				Request:    req,
 			}, nil
 		}),
 	}
 
 	client := New("auth", "cookie", batchexecute.WithHTTPClient(httpClient))
-	_ = client.DeleteSources("project-123", []string{"source-1", "source-2"})
+	if err := client.DeleteSources("project-123", []string{"source-1", "source-2"}); err != nil {
+		t.Fatalf("DeleteSources: %v", err)
+	}
 	if gotSourcePath != "/notebook/project-123" {
 		t.Fatalf("source-path = %q, want %q", gotSourcePath, "/notebook/project-123")
 	}
@@ -64,4 +67,126 @@ func TestDeleteSourcesUsesNotebookContext(t *testing.T) {
 	if !strings.Contains(payload, "source-1") || !strings.Contains(payload, "source-2") {
 		t.Fatalf("payload %q missing source ids", payload)
 	}
+}
+
+func TestDeleteSourcesBatchesRequests(t *testing.T) {
+	t.Parallel()
+
+	var gotBodies []string
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("ReadAll(req.Body): %v", err)
+			}
+			raw := string(body)
+			gotBodies = append(gotBodies, raw)
+			if n := countDeleteSourceIDs(t, raw); n > deleteSourcesBatchSize {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(deleteSourcesResponse(t, 3))),
+					Request:    req,
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(deleteSourcesResponse(t, []interface{}{}))),
+				Request:    req,
+			}, nil
+		}),
+	}
+
+	var ids []string
+	for i := 1; i <= 25; i++ {
+		ids = append(ids, fmt.Sprintf("source-%02d", i))
+	}
+	client := New("auth", "cookie", batchexecute.WithHTTPClient(httpClient))
+	if err := client.DeleteSources("project-123", ids); err != nil {
+		t.Fatalf("DeleteSources: %v", err)
+	}
+	if len(gotBodies) != 3 {
+		t.Fatalf("requests = %d, want 3", len(gotBodies))
+	}
+	want := [][]string{ids[:10], ids[10:20], ids[20:]}
+	for i, body := range gotBodies {
+		payload := deleteSourcePayload(t, body)
+		if n := strings.Count(payload, "source-"); n != len(want[i]) {
+			t.Fatalf("request %d source count = %d, want %d in %q", i+1, n, len(want[i]), payload)
+		}
+		for _, id := range want[i] {
+			if !strings.Contains(payload, id) {
+				t.Fatalf("request %d missing %s in %q", i+1, id, payload)
+			}
+		}
+	}
+}
+
+func TestDeleteSourcesBatchErrorIdentifiesFailedRange(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			calls++
+			if calls == 2 {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(deleteSourcesResponse(t, 3))),
+					Request:    req,
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(deleteSourcesResponse(t, []interface{}{}))),
+				Request:    req,
+			}, nil
+		}),
+	}
+
+	var ids []string
+	for i := 1; i <= 25; i++ {
+		ids = append(ids, fmt.Sprintf("source-%02d", i))
+	}
+	client := New("auth", "cookie", batchexecute.WithHTTPClient(httpClient))
+	err := client.DeleteSources("project-123", ids)
+	if err == nil {
+		t.Fatal("DeleteSources succeeded, want batch error")
+	}
+	if !strings.Contains(err.Error(), "delete sources 11-20 of 25") {
+		t.Fatalf("error = %v, want failed range", err)
+	}
+	if calls != 2 {
+		t.Fatalf("requests = %d, want stop after second request", calls)
+	}
+}
+
+func deleteSourcePayload(t *testing.T, body string) string {
+	t.Helper()
+	form, err := url.ParseQuery(body)
+	if err != nil {
+		t.Fatalf("ParseQuery(body): %v", err)
+	}
+	raw := form.Get("f.req")
+	if raw == "" {
+		t.Fatal("f.req missing")
+	}
+	return raw
+}
+
+func countDeleteSourceIDs(t *testing.T, body string) int {
+	t.Helper()
+	return strings.Count(deleteSourcePayload(t, body), "source-")
+}
+
+func deleteSourcesResponse(t *testing.T, data interface{}) string {
+	t.Helper()
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf(")]}'\n\n[[\"wrb.fr\",\"tGMBJ\",%s,null,null,null,\"generic\"]]", jsonData)
 }

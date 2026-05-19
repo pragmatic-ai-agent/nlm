@@ -497,7 +497,27 @@ func (c *Client) AddSources(projectID string, sources []*pb.SourceInput) (*pb.Pr
 	return project, nil
 }
 
+// deleteSourcesBatchSize is the largest batch size known to work reliably
+// against the tGMBJ DeleteSources RPC.
+const deleteSourcesBatchSize = 10
+
 func (c *Client) DeleteSources(projectID string, sourceIDs []string) error {
+	for start := 0; start < len(sourceIDs); start += deleteSourcesBatchSize {
+		end := start + deleteSourcesBatchSize
+		if end > len(sourceIDs) {
+			end = len(sourceIDs)
+		}
+		if err := c.deleteSourcesBatch(projectID, sourceIDs[start:end]); err != nil {
+			if len(sourceIDs) <= deleteSourcesBatchSize {
+				return err
+			}
+			return fmt.Errorf("delete sources %d-%d of %d: %w", start+1, end, len(sourceIDs), err)
+		}
+	}
+	return nil
+}
+
+func (c *Client) deleteSourcesBatch(projectID string, sourceIDs []string) error {
 	// Wire format: [repeated_source_ids, project_context]
 	//   field 1: repeated SourceId — each ID wrapped as ["id"]
 	//   field 2: ProjectContext [2]
