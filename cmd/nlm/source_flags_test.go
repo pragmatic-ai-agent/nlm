@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -167,5 +168,33 @@ func TestParseSourcePackArgs(t *testing.T) {
 	}
 	if len(gotPaths) != 1 || gotPaths[0] != "./docs" {
 		t.Fatalf("parseSourcePackArgs() paths = %q, want [./docs]", gotPaths)
+	}
+}
+
+func TestParseSourceArgsUseGlobalDefaults(t *testing.T) {
+	globals := globalOptions{
+		sourceName:      "docs",
+		force:           true,
+		jsonOutput:      true,
+		maxBytes:        1024,
+		replaceSourceID: "src-old",
+	}
+	syncOpts, positional, err := parseSourceSyncArgsWithOptions([]string{"nb", "./docs"}, globals)
+	if err != nil {
+		t.Fatalf("parseSourceSyncArgsWithOptions: %v", err)
+	}
+	if !syncOpts.Force || !syncOpts.JSON || syncOpts.Name != "docs" || syncOpts.MaxBytes != 1024 {
+		t.Fatalf("sync opts = %+v, want inherited force/json/name/maxBytes", syncOpts)
+	}
+	if got, want := strings.Join(positional, ","), "nb,./docs"; got != want {
+		t.Fatalf("positional = %q, want %q", got, want)
+	}
+
+	addOpts, _, _, err := parseSourceAddArgsWithOptions([]string{"nb", "README.md"}, globals)
+	if err != nil {
+		t.Fatalf("parseSourceAddArgsWithOptions: %v", err)
+	}
+	if addOpts.Name != "docs" || addOpts.ReplaceSourceID != "src-old" {
+		t.Fatalf("add opts = %+v, want inherited name and replace id", addOpts)
 	}
 }

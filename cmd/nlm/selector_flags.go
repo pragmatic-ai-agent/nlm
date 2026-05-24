@@ -31,7 +31,11 @@ func printSourceSelectionUsage(cmdName string) {
 }
 
 func validateSourceSelectionArgs(cmdName string, args []string) error {
-	_, _, err := parseSourceSelectionArgs(args)
+	return validateSourceSelectionArgsWithOptions(cmdName, args, packageGlobalOptions())
+}
+
+func validateSourceSelectionArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, _, err := parseSourceSelectionArgsWithOptions(args, globals)
 	if err == nil {
 		return nil
 	}
@@ -40,8 +44,12 @@ func validateSourceSelectionArgs(cmdName string, args []string) error {
 }
 
 func parseSourceSelectionArgs(args []string) (sourceSelectionOptions, []string, error) {
+	return parseSourceSelectionArgsWithOptions(args, packageGlobalOptions())
+}
+
+func parseSourceSelectionArgsWithOptions(args []string, globals globalOptions) (sourceSelectionOptions, []string, error) {
 	opts := sourceSelectionOptions{
-		Selectors: currentSelectorOptions(),
+		Selectors: selectorOptionsFromGlobals(globals),
 	}
 	flags := flag.NewFlagSet("source-selection", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -76,7 +84,11 @@ func parseSourceSelectionArgs(args []string) (sourceSelectionOptions, []string, 
 }
 
 func runSourceSelectionAction(c *api.Client, args []string, action string) error {
-	opts, positional, err := parseSourceSelectionArgs(args)
+	return runSourceSelectionActionWithOptions(c, args, action, packageGlobalOptions())
+}
+
+func runSourceSelectionActionWithOptions(c *api.Client, args []string, action string, globals globalOptions) error {
+	opts, positional, err := parseSourceSelectionArgsWithOptions(args, globals)
 	if err != nil {
 		return err
 	}
@@ -92,7 +104,11 @@ func runSourceSelectionAction(c *api.Client, args []string, action string) error
 }
 
 func runSourceGuide(c *api.Client, args []string) error {
-	opts, positional, err := parseSourceSelectionArgs(args)
+	return runSourceGuideWithOptions(c, args, packageGlobalOptions())
+}
+
+func runSourceGuideWithOptions(c *api.Client, args []string, globals globalOptions) error {
+	opts, positional, err := parseSourceSelectionArgsWithOptions(args, globals)
 	if err != nil {
 		return err
 	}

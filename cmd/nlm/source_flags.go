@@ -169,7 +169,11 @@ func printSourcePackUsage(cmdName string) {
 }
 
 func validateSourceAddArgs(cmdName string, args []string) error {
-	_, _, _, err := parseSourceAddArgs(args)
+	return validateSourceAddArgsWithOptions(cmdName, args, packageGlobalOptions())
+}
+
+func validateSourceAddArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, _, _, err := parseSourceAddArgsWithOptions(args, globals)
 	if err == nil {
 		return nil
 	}
@@ -178,7 +182,11 @@ func validateSourceAddArgs(cmdName string, args []string) error {
 }
 
 func validateSourceSyncArgs(cmdName string, args []string) error {
-	_, _, err := parseSourceSyncArgs(args)
+	return validateSourceSyncArgsWithOptions(cmdName, args, packageGlobalOptions())
+}
+
+func validateSourceSyncArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, _, err := parseSourceSyncArgsWithOptions(args, globals)
 	if err == nil {
 		return nil
 	}
@@ -187,7 +195,11 @@ func validateSourceSyncArgs(cmdName string, args []string) error {
 }
 
 func validateSourcePackArgs(cmdName string, args []string) error {
-	_, _, err := parseSourcePackArgs(args)
+	return validateSourcePackArgsWithOptions(cmdName, args, packageGlobalOptions())
+}
+
+func validateSourcePackArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, _, err := parseSourcePackArgsWithOptions(args, globals)
 	if err == nil {
 		return nil
 	}
@@ -196,10 +208,14 @@ func validateSourcePackArgs(cmdName string, args []string) error {
 }
 
 func parseSourceAddArgs(args []string) (sourceAddOptions, string, []string, error) {
+	return parseSourceAddArgsWithOptions(args, packageGlobalOptions())
+}
+
+func parseSourceAddArgsWithOptions(args []string, globals globalOptions) (sourceAddOptions, string, []string, error) {
 	opts := sourceAddOptions{
-		Name:            sourceName,
-		MIMEType:        mimeType,
-		ReplaceSourceID: replaceSourceID,
+		Name:            globals.sourceName,
+		MIMEType:        globals.mimeType,
+		ReplaceSourceID: globals.replaceSourceID,
 	}
 	flags := flag.NewFlagSet("source-add", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -238,12 +254,16 @@ func parseSourceAddArgs(args []string) (sourceAddOptions, string, []string, erro
 }
 
 func parseSourceSyncArgs(args []string) (syncOptions, []string, error) {
+	return parseSourceSyncArgsWithOptions(args, packageGlobalOptions())
+}
+
+func parseSourceSyncArgsWithOptions(args []string, globals globalOptions) (syncOptions, []string, error) {
 	opts := syncOptions{
-		Name:     sourceName,
-		Force:    force,
-		DryRun:   dryRun,
-		MaxBytes: maxBytes,
-		JSON:     jsonOutput,
+		Name:     globals.sourceName,
+		Force:    globals.force,
+		DryRun:   globals.dryRun,
+		MaxBytes: globals.maxBytes,
+		JSON:     globals.jsonOutput,
 	}
 	flags := flag.NewFlagSet("source-sync", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -282,10 +302,14 @@ func parseSourceSyncArgs(args []string) (syncOptions, []string, error) {
 }
 
 func parseSourcePackArgs(args []string) (syncPackOptions, []string, error) {
+	return parseSourcePackArgsWithOptions(args, packageGlobalOptions())
+}
+
+func parseSourcePackArgsWithOptions(args []string, globals globalOptions) (syncPackOptions, []string, error) {
 	opts := syncPackOptions{
-		Name:     sourceName,
-		MaxBytes: maxBytes,
-		Chunk:    packChunk,
+		Name:     globals.sourceName,
+		MaxBytes: globals.maxBytes,
+		Chunk:    globals.packChunk,
 	}
 	flags := flag.NewFlagSet("source-pack", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -318,7 +342,11 @@ func parseSourcePackArgs(args []string) (syncPackOptions, []string, error) {
 }
 
 func runSourceAdd(c *api.Client, args []string) error {
-	opts, notebookID, rawInputs, err := parseSourceAddArgs(args)
+	return runSourceAddWithOptions(c, args, packageGlobalOptions())
+}
+
+func runSourceAddWithOptions(c *api.Client, args []string, globals globalOptions) error {
+	opts, notebookID, rawInputs, err := parseSourceAddArgsWithOptions(args, globals)
 	if err != nil {
 		return err
 	}
@@ -330,7 +358,11 @@ func runSourceAdd(c *api.Client, args []string) error {
 }
 
 func runSourceSync(c *api.Client, args []string) error {
-	opts, positional, err := parseSourceSyncArgs(args)
+	return runSourceSyncWithOptions(c, args, packageGlobalOptions())
+}
+
+func runSourceSyncWithOptions(c *api.Client, args []string, globals globalOptions) error {
+	opts, positional, err := parseSourceSyncArgsWithOptions(args, globals)
 	if err != nil {
 		return err
 	}
@@ -361,7 +393,11 @@ func runSourceSync(c *api.Client, args []string) error {
 }
 
 func runSourcePack(args []string) error {
-	opts, paths, err := parseSourcePackArgs(args)
+	return runSourcePackWithOptions(args, packageGlobalOptions())
+}
+
+func runSourcePackWithOptions(args []string, globals globalOptions) error {
+	opts, paths, err := parseSourcePackArgsWithOptions(args, globals)
 	if err != nil {
 		return err
 	}

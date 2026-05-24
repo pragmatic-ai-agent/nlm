@@ -19,13 +19,17 @@ type selectorOptions struct {
 }
 
 func currentSelectorOptions() selectorOptions {
+	return selectorOptionsFromGlobals(packageGlobalOptions())
+}
+
+func selectorOptionsFromGlobals(globals globalOptions) selectorOptions {
 	return selectorOptions{
-		SourceIDs:     sourceIDsFlag,
-		SourceMatch:   sourceMatchFlag,
-		SourceExclude: sourceExcludeFlag,
-		LabelIDs:      labelIDsFlag,
-		LabelMatch:    labelMatchFlag,
-		LabelExclude:  labelExcludeFlag,
+		SourceIDs:     globals.sourceIDsFlag,
+		SourceMatch:   globals.sourceMatchFlag,
+		SourceExclude: globals.sourceExcludeFlag,
+		LabelIDs:      globals.labelIDsFlag,
+		LabelMatch:    globals.labelMatchFlag,
+		LabelExclude:  globals.labelExcludeFlag,
 	}
 }
 

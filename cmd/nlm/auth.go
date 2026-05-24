@@ -45,13 +45,19 @@ type AuthOptions struct {
 }
 
 func parseAuthFlags(args []string) (*AuthOptions, []string, error) {
+	return parseAuthFlagsWithOptions(args, packageGlobalOptions())
+}
+
+func parseAuthFlagsWithOptions(args []string, globals globalOptions) (*AuthOptions, []string, error) {
 	// Create a new FlagSet
 	authFlags := flag.NewFlagSet("auth", flag.ContinueOnError)
 
 	// Define auth-specific flags
 	opts := &AuthOptions{
-		ProfileName: chromeProfile,
+		ProfileName: globals.chromeProfile,
 		TargetURL:   "https://notebooklm.google.com",
+		Debug:       globals.debug,
+		AuthUser:    firstNonEmpty(globals.authUser, os.Getenv("NLM_AUTHUSER")),
 	}
 
 	authFlags.BoolVar(&opts.TryAllProfiles, "all", false, "Try all available browser profiles")
@@ -62,8 +68,8 @@ func parseAuthFlags(args []string) (*AuthOptions, []string, error) {
 	authFlags.StringVar(&opts.TargetURL, "u", opts.TargetURL, "Target URL to authenticate against (shorthand)")
 	authFlags.BoolVar(&opts.CheckNotebooks, "notebooks", false, "Check notebook count for profiles")
 	authFlags.BoolVar(&opts.CheckNotebooks, "n", false, "Check notebook count for profiles (shorthand)")
-	authFlags.BoolVar(&opts.Debug, "debug", debug, "Enable debug output")
-	authFlags.BoolVar(&opts.Debug, "d", debug, "Enable debug output (shorthand)")
+	authFlags.BoolVar(&opts.Debug, "debug", opts.Debug, "Enable debug output")
+	authFlags.BoolVar(&opts.Debug, "d", opts.Debug, "Enable debug output (shorthand)")
 	authFlags.BoolVar(&opts.Help, "help", false, "Show help for auth command")
 	authFlags.BoolVar(&opts.Help, "h", false, "Show help for auth command (shorthand)")
 	authFlags.BoolVar(&opts.PrintEnv, "print-env", false, "Print shell-safe export lines for the current session to stdout")
@@ -71,8 +77,8 @@ func parseAuthFlags(args []string) (*AuthOptions, []string, error) {
 	authFlags.IntVar(&opts.KeepOpenSeconds, "k", 0, "Keep browser open for N seconds after successful auth (shorthand)")
 	authFlags.StringVar(&opts.RemoteCDPURL, "cdp-url", "", "Remote CDP WebSocket URL (e.g. ws://localhost:9222)")
 	authFlags.StringVar(&opts.RemoteCDPURL, "c", "", "Remote CDP WebSocket URL (shorthand)")
-	authFlags.StringVar(&opts.AuthUser, "authuser", os.Getenv("NLM_AUTHUSER"), "Google account index for multi-account profiles (e.g. 1)")
-	authFlags.StringVar(&opts.AuthUser, "au", os.Getenv("NLM_AUTHUSER"), "Google account index (shorthand)")
+	authFlags.StringVar(&opts.AuthUser, "authuser", opts.AuthUser, "Google account index for multi-account profiles (e.g. 1)")
+	authFlags.StringVar(&opts.AuthUser, "au", opts.AuthUser, "Google account index (shorthand)")
 
 	// Set custom usage
 	authFlags.Usage = func() {
@@ -97,8 +103,23 @@ func parseAuthFlags(args []string) (*AuthOptions, []string, error) {
 		}
 	}
 
+	flagArgs, remainingArgs, err := splitCommandFlags(filteredArgs, map[string]bool{
+		"all": true, "a": true, "profile": true, "p": true,
+		"url": true, "u": true, "notebooks": true, "n": true,
+		"debug": true, "d": true, "help": true, "h": true,
+		"print-env": true, "keep-open": true, "k": true,
+		"cdp-url": true, "c": true, "authuser": true, "au": true,
+	}, map[string]bool{
+		"all": true, "a": true, "notebooks": true, "n": true,
+		"debug": true, "d": true, "help": true, "h": true,
+		"print-env": true,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
 	// Parse the flags
-	err := authFlags.Parse(filteredArgs)
+	err = authFlags.Parse(flagArgs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -108,9 +129,6 @@ func parseAuthFlags(args []string) (*AuthOptions, []string, error) {
 		authFlags.Usage()
 		return nil, nil, fmt.Errorf("help shown")
 	}
-
-	// Remaining arguments after flag parsing
-	remainingArgs := authFlags.Args()
 
 	// If there's an argument and no specific profile is set via flag, treat the first arg as profile name
 	if !opts.TryAllProfiles && opts.ProfileName == "" && len(remainingArgs) > 0 {
@@ -136,12 +154,23 @@ func parseAuthFlags(args []string) (*AuthOptions, []string, error) {
 	return opts, remainingArgs, nil
 }
 
+func printAuthUsage(_ string) {
+	_, _, _ = parseAuthFlags([]string{"--help"})
+}
+
 func handleAuth(args []string, debug bool) (string, string, error) {
+	return handleAuthWithOptions(args, globalOptions{
+		chromeProfile: chromeProfile,
+		authUser:      authUser,
+		debug:         debug,
+	})
+}
+
+func handleAuthWithOptions(args []string, globals globalOptions) (string, string, error) {
 	// Check if help flag is present directly
 	for _, arg := range args {
 		if arg == "-h" || arg == "--help" || arg == "-help" || arg == "help" {
-			// Parse auth-specific flags which will display help
-			parseAuthFlags([]string{"--help"})
+			printAuthUsage("auth")
 			return "", "", nil // Help was shown, exit gracefully
 		}
 	}
@@ -156,7 +185,7 @@ func handleAuth(args []string, debug bool) (string, string, error) {
 
 	isTty := term.IsTerminal(int(os.Stdin.Fd()))
 
-	if debug {
+	if globals.debug {
 		fmt.Fprintf(os.Stderr, "Input is from a TTY: %v\n", isTty)
 	}
 
@@ -165,7 +194,7 @@ func handleAuth(args []string, debug bool) (string, string, error) {
 	for _, arg := range args {
 		if arg == "login" {
 			forceBrowser = true
-			if debug {
+			if globals.debug {
 				fmt.Fprintf(os.Stderr, "Found 'login' command, forcing browser authentication\n")
 			}
 			break
@@ -184,14 +213,14 @@ func handleAuth(args []string, debug bool) (string, string, error) {
 			}
 
 			if len(input) > 0 {
-				if debug {
+				if globals.debug {
 					fmt.Fprintf(os.Stderr, "Parsing auth info from stdin input (%d bytes)\n", len(input))
 				}
 				return detectAuthInfo(string(input))
-			} else if debug {
+			} else if globals.debug {
 				fmt.Fprintf(os.Stderr, "Stdin is not a TTY but has no data, proceeding to browser auth\n")
 			}
-		} else if debug {
+		} else if globals.debug {
 			fmt.Fprintf(os.Stderr, "Stdin is not a TTY but is a character device, proceeding to browser auth\n")
 		}
 	}
@@ -206,7 +235,7 @@ func handleAuth(args []string, debug bool) (string, string, error) {
 	}
 
 	// Parse auth-specific flags
-	opts, _, err := parseAuthFlags(args)
+	opts, _, err := parseAuthFlagsWithOptions(args, globals)
 	if err != nil {
 		if err.Error() == "help shown" {
 			return "", "", nil // Help was shown, exit gracefully
@@ -226,7 +255,7 @@ func handleAuth(args []string, debug bool) (string, string, error) {
 	}
 
 	// Use the debug flag from options if set, otherwise use the global debug flag
-	useDebug := opts.Debug || debug
+	useDebug := opts.Debug || globals.debug
 
 	a := auth.New(useDebug)
 

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/url"
@@ -103,145 +102,13 @@ type ChatMessage struct {
 	Citations []api.Citation `json:"citations,omitempty"` // Source references from the response
 }
 
-func init() {
-	flag.BoolVar(&showVersion, "version", false, "print nlm version and exit")
-	flag.BoolVar(&experimental, "experimental", false, "enable experimental commands (also: NLM_EXPERIMENTAL=1)")
-	flag.BoolVar(&debug, "debug", false, "enable debug output")
-	flag.BoolVar(&debugDumpPayload, "debug-dump-payload", false, "dump raw JSON payload and exit (unix-friendly)")
-	flag.BoolVar(&debugParsing, "debug-parsing", false, "show detailed protobuf parsing information")
-	flag.BoolVar(&debugFieldMapping, "debug-field-mapping", false, "show how JSON array positions map to protobuf fields")
-	flag.BoolVar(&chunkedResponse, "chunked", false, "use chunked response format (rt=c)")
-	flag.BoolVar(&useDirectRPC, "direct-rpc", false, "use direct RPC calls for audio/video (bypasses orchestration service)")
-	flag.BoolVar(&skipSources, "skip-sources", false, "skip fetching sources for chat (useful for testing)")
-	flag.BoolVar(&yes, "yes", false, "skip confirmation prompts")
-	flag.BoolVar(&yes, "y", false, "skip confirmation prompts")
-	flag.StringVar(&chromeProfile, "profile", os.Getenv("NLM_BROWSER_PROFILE"), "Chrome profile to use")
-	flag.StringVar(&authToken, "auth", os.Getenv("NLM_AUTH_TOKEN"), "auth token (or set NLM_AUTH_TOKEN)")
-	flag.StringVar(&cookies, "cookies", os.Getenv("NLM_COOKIES"), "cookies for authentication (or set NLM_COOKIES)")
-	flag.StringVar(&authUser, "authuser", os.Getenv("NLM_AUTHUSER"), "Google account index for multi-account profiles")
-	flag.StringVar(&mimeType, "mime", "", "specify MIME type for content (e.g. 'application/pdf', 'text/plain')")
-	flag.StringVar(&mimeType, "mime-type", "", "specify MIME type for content (alias for -mime)")
-	flag.StringVar(&sourceName, "name", "", "custom name for added source")
-	flag.StringVar(&sourceName, "n", "", "custom name for added source (shorthand)")
-	flag.StringVar(&replaceSourceID, "replace", "", "source ID to replace (upload new, then delete old)")
-	flag.BoolVar(&jsonOutput, "json", false, "emit NDJSON instead of tab-separated tables (notebook list/source list/note list/notebook featured/artifact list/audio list/video list/guidebooks/chat list/label list); also enables NDJSON progress for sync")
-	flag.BoolVar(&force, "force", false, "force re-upload even if unchanged (sync)")
-	flag.BoolVar(&dryRun, "dry-run", false, "show what would change without uploading (sync)")
-	flag.IntVar(&maxBytes, "max-bytes", 0, "chunk threshold in bytes (sync, default 5120000)")
-	flag.IntVar(&packChunk, "chunk", 0, "1-indexed chunk to emit (sync-pack); omit to list or emit sole chunk")
-	flag.StringVar(&reportPrompt, "prompt", "", "per-section prompt template for generate-report ({topic} is replaced)")
-	flag.StringVar(&reportInstructions, "instructions", "", "set notebook instructions before generate-report")
-	flag.IntVar(&reportSections, "sections", 0, "max sections to generate (generate-report, 0=all)")
-	flag.StringVar(&conversationID, "conversation", "", "continue an existing conversation by ID (generate-chat prints the ID on first turn)")
-	flag.StringVar(&conversationID, "c", "", "continue an existing conversation by ID (shorthand)")
-	flag.BoolVar(&useWebChat, "web", false, "use the most recent server-side conversation (generate-chat)")
-	flag.BoolVar(&showChatHistory, "history", false, "show previous chat conversation on start")
-	flag.BoolVar(&showThinking, "thinking", false, "show thinking headers while streaming chat and generate-chat responses")
-	flag.BoolVar(&showThinking, "reasoning", false, "show thinking headers while streaming chat and generate-chat responses")
-	flag.BoolVar(&thinkingJSONL, "thinking-jsonl", false, "deprecated: equivalent to --citations=json --thinking; emits thinking+answer+citation+followup JSON-lines events")
-	flag.BoolVar(&verbose, "verbose", false, "show full thinking traces while streaming chat and generate-chat responses")
-	flag.BoolVar(&verbose, "v", false, "show full thinking traces while streaming responses (shorthand)")
-	flag.StringVar(&citationMode, "citations", "", "citation rendering: auto|off|block|stream|tail|overlay|json (default: block — answer + trailing Sources list; json emits answer+citation JSON-lines)")
-	flag.BoolVar(&resolveCitationsFlag, "resolve-citations", false, "resolve each citation back to file:line when the source is a txtar archive (one extra LoadSourceText fetch per cited source)")
-	flag.StringVar(&sourceIDsFlag, "source-ids", "", "focus on these source IDs (e.g. 'a,b,c' or '-' for newline-delimited stdin); applies to chat, report, and transform commands")
-	flag.StringVar(&sourceMatchFlag, "source-match", "", "focus on sources whose title or UUID matches this regex (e.g. '^nlm internal/' or '^132af'); unioned with --source-ids")
-	flag.StringVar(&sourceExcludeFlag, "source-exclude", "", "exclude sources whose title or UUID matches this regex; applied after include selectors")
-	flag.StringVar(&labelIDsFlag, "label-ids", "", "include sources tagged with any of these label IDs ('a,b,c'); requires labels to be computed for the notebook")
-	flag.StringVar(&labelMatchFlag, "label-match", "", "include sources tagged with any label whose name matches this regex (e.g. '^Testing$')")
-	flag.StringVar(&labelExcludeFlag, "label-exclude", "", "exclude sources tagged with any label whose name matches this regex; applied after include selectors")
-	flag.StringVar(&promptFile, "prompt-file", "", "read prompt from file for one-shot chat ('-' reads stdin). Reliable for long/automated prompts.")
-	flag.StringVar(&promptFile, "f", "", "read prompt from file for one-shot chat ('-' reads stdin) (shorthand)")
-	flag.StringVar(&researchMode, "mode", "", "research mode: fast|deep (default: deep; used by nlm research)")
-	flag.BoolVar(&researchMD, "md", false, "emit raw markdown report (nlm research; default is JSON-lines events)")
-	flag.IntVar(&researchPollMs, "poll-ms", 0, "override research polling interval in milliseconds (default: 5000)")
-	flag.BoolVar(&researchImport, "import", false, "after research completes, import the discovered sources into the notebook via LBwxtb BulkImportFromResearch")
-
-	flag.Usage = printUsage
-}
-
-// reorderArgs moves known top-level flags that appear after the command name
-// to before it, so "nlm rm -y <id>" works the same as "nlm -y rm <id>".
-// Unknown flags (e.g. subcommand-specific flags like --cdp-url for auth)
-// are left in positional order so the subcommand's FlagSet can parse them.
-func reorderArgs() {
-	if len(os.Args) < 3 {
-		return
-	}
-
-	// Build sets of known top-level flags
-	knownFlags := map[string]bool{}
-	boolFlags := map[string]bool{}
-	flag.CommandLine.VisitAll(func(f *flag.Flag) {
-		knownFlags[f.Name] = true
-		if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && bf.IsBoolFlag() {
-			boolFlags[f.Name] = true
-		}
-	})
-
-	var flags, positional []string
-	i := 1 // skip os.Args[0] (program name)
-	for i < len(os.Args) {
-		arg := os.Args[i]
-		if arg == "--" {
-			positional = append(positional, os.Args[i:]...)
-			break
-		}
-		if arg != "-" && strings.HasPrefix(arg, "-") {
-			name := strings.TrimLeft(arg, "-")
-			if eq := strings.IndexByte(name, '='); eq >= 0 {
-				name = name[:eq]
-			}
-			if knownFlags[name] {
-				if !boolFlags[name] && !strings.Contains(arg, "=") {
-					// Non-bool flag needs a value. Only consume the next arg as
-					// that value if it's not itself a command name or another
-					// flag — otherwise treat the flag as switch-form and
-					// rewrite to flag= so flag.Parse doesn't steal a positional
-					// when reorder puts this flag before the command.
-					// A bare "-" is a valid value (conventionally "read from
-					// stdin"), not a flag, so consume it like any other value.
-					if i+1 < len(os.Args) {
-						next := os.Args[i+1]
-						isFlag := strings.HasPrefix(next, "-") && next != "-"
-						if !isCommandStart(next) && !isFlag {
-							flags = append(flags, arg, next)
-							i += 2
-							continue
-						}
-					}
-					flags = append(flags, arg+"=")
-				} else {
-					flags = append(flags, arg)
-				}
-			} else {
-				// Unknown flag — leave as positional for subcommand parsing
-				positional = append(positional, arg)
-				// If it looks like it takes a value, pass that through too
-				if !strings.Contains(arg, "=") && i+1 < len(os.Args) && !strings.HasPrefix(os.Args[i+1], "-") {
-					i++
-					positional = append(positional, os.Args[i])
-				}
-			}
-		} else {
-			positional = append(positional, arg)
-		}
-		i++
-	}
-
-	os.Args = append([]string{os.Args[0]}, append(flags, positional...)...)
-}
-
 func main() {
-	reorderArgs()
-	flag.Parse()
+	os.Exit(runCLI(os.Args[1:], os.Getenv, os.Stdout, os.Stderr))
+}
 
-	if showVersion {
-		fmt.Println(versionString())
-		return
-	}
-
+func prepareRuntime(stderr io.Writer) {
 	if debug {
-		fmt.Fprintf(os.Stderr, "nlm: debug mode enabled\n")
+		fmt.Fprintf(stderr, "nlm: debug mode enabled\n")
 		if chromeProfile != "" {
 			// Mask potentially sensitive profile names in debug output
 			maskedProfile := chromeProfile
@@ -250,7 +117,7 @@ func main() {
 			} else if len(chromeProfile) > 2 {
 				maskedProfile = chromeProfile[:2] + "****"
 			}
-			fmt.Fprintf(os.Stderr, "nlm: using Chrome profile: %s\n", maskedProfile)
+			fmt.Fprintf(stderr, "nlm: using Chrome profile: %s\n", maskedProfile)
 		}
 	}
 
@@ -267,7 +134,7 @@ func main() {
 	if skipSources {
 		os.Setenv("NLM_SKIP_SOURCES", "true")
 		if debug {
-			fmt.Fprintf(os.Stderr, "nlm: skipping source fetching for chat\n")
+			fmt.Fprintf(stderr, "nlm: skipping source fetching for chat\n")
 		}
 	}
 
@@ -278,15 +145,66 @@ func main() {
 
 	// Start auto-refresh manager if credentials exist
 	startAutoRefreshIfEnabled()
+}
 
-	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "nlm: %s\n", friendlyError(err))
-		code := exitCodeFor(err)
-		if name := exitCodeName(code); name != "" {
-			fmt.Fprintf(os.Stderr, "nlm: exit-class=%s (exit %d)\n", name, code)
-		}
-		os.Exit(code)
+func runCLI(args []string, env func(string) string, stdout, stderr io.Writer) int {
+	inv, err := parseInvocation(args, env, stdout, stderr)
+	applyGlobalOptions(inv.globals)
+	if inv.action == invocationVersion && err == nil {
+		fmt.Fprintln(stdout, versionString())
+		return 0
 	}
+
+	if err == nil || inv.action != invocationRun || inv.cmd != nil {
+		prepareRuntime(stderr)
+	}
+
+	if err != nil {
+		switch inv.action {
+		case invocationRootHelp:
+			printUsage()
+		case invocationSectionHelp:
+			printSectionUsage(inv.section)
+		case invocationCommandHelp:
+			printCommandHelp(inv.name, inv.cmd)
+		}
+		return reportRunError(stderr, err)
+	}
+
+	switch inv.action {
+	case invocationRootHelp:
+		printUsage()
+		return 0
+	case invocationSectionHelp:
+		printSectionUsage(inv.section)
+		return 0
+	case invocationCommandHelp:
+		warnCompatibilityCommand(inv.name, inv.cmd)
+		printCommandHelp(inv.name, inv.cmd)
+		return 0
+	}
+
+	if err := run(inv); err != nil {
+		return reportRunError(stderr, err)
+	}
+	return 0
+}
+
+func printCommandHelp(cmdName string, cmd *command) {
+	if cmd.help != nil {
+		cmd.help(cmdName)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "usage: nlm %s %s\n  %s\n", cmdName, cmd.argsUsage, cmd.usage)
+}
+
+func reportRunError(stderr io.Writer, err error) int {
+	fmt.Fprintf(stderr, "nlm: %s\n", friendlyError(err))
+	code := exitCodeFor(err)
+	if name := exitCodeName(code); name != "" {
+		fmt.Fprintf(stderr, "nlm: exit-class=%s (exit %d)\n", name, code)
+	}
+	return code
 }
 
 // friendlyError rewrites the "API error <N> (<Type>): <msg>" format produced
@@ -436,7 +354,7 @@ func friendlyAuthenticationError(err error) string {
 // isAuthCommand returns true if the command requires authentication
 // validateArgs validates command arguments without requiring authentication
 
-func run() error {
+func run(inv invocation) error {
 	if authToken == "" {
 		authToken = os.Getenv("NLM_AUTH_TOKEN")
 	}
@@ -461,62 +379,17 @@ func run() error {
 		}
 	}
 
-	if flag.NArg() < 1 {
-		flag.Usage()
-		return errBadArgs
-	}
-
-	rawArgs := flag.Args()
-	cmdName := rawArgs[0]
-
-	// Handle help aliases.
-	if helpAliases[cmdName] {
-		flag.Usage()
-		return nil
-	}
-
-	// Look up command in the table, preferring the longest multi-token match.
-	cmdName, entry, args, ok := findCommand(rawArgs)
-	if !ok {
-		// `nlm <noun>` or `nlm <noun> --help` with no matching command
-		// narrows help to the matching section so agents can drill in
-		// without dumping the full table.
-		if section := nounSectionFromArgs(rawArgs); section != "" {
-			printSectionUsage(section)
-			return nil
-		}
-		// "did you mean" hint for likely typos: check the closest
-		// top-level command, and if the first arg looks like a section
-		// noun, also try verbs in that section. The hint goes to stderr
-		// before the usual help dump; exit code is unchanged.
-		if guess := suggestionForArgs(rawArgs); guess != "" {
-			fmt.Fprintf(os.Stderr, "nlm: unknown command %q. Did you mean %q?\n\n", strings.Join(rawArgs, " "), guess)
-		}
-		flag.Usage()
-		return errBadArgs
-	}
+	cmdName, entry, args := inv.name, inv.cmd, inv.args
 	warnCompatibilityCommand(cmdName, entry)
 
-	// Check for help flags in subcommand args.
-	for _, a := range args {
-		if a == "--help" || a == "-h" || a == "-help" {
-			if entry.help != nil {
-				entry.help(cmdName)
-			} else {
-				fmt.Fprintf(os.Stderr, "usage: nlm %s %s\n  %s\n", cmdName, entry.argsUsage, entry.usage)
-			}
-			return nil
-		}
-	}
-
 	// Validate arguments.
-	if err := validateCommandArgs(entry, cmdName, args); err != nil {
+	if err := validateCommandArgs(entry, cmdName, args, inv.globals); err != nil {
 		return err
 	}
 
 	// Commands that don't need an API client run directly.
 	if entry.noClient {
-		return entry.run(nil, args)
+		return runCommand(entry, nil, args, inv.globals)
 	}
 
 	// Check authentication.
@@ -581,7 +454,7 @@ func run() error {
 				fmt.Fprintf(os.Stderr, "nlm: using direct RPC for audio/video operations\n")
 			}
 		}
-		cmdErr := entry.run(client, args)
+		cmdErr := runCommand(entry, client, args, inv.globals)
 		if cmdErr == nil {
 			if i > 0 {
 				fmt.Fprintln(os.Stderr, "nlm: authentication refreshed successfully")
@@ -2997,7 +2870,7 @@ func deleteChatHistory(c *api.Client, notebookID string) error {
 
 func setChatConfig(c *api.Client, args []string) error {
 	if len(args) < 2 {
-		fmt.Fprintf(os.Stderr, "usage: nlm chat-config <notebook-id> <setting> [value]\n")
+		fmt.Fprintf(os.Stderr, "usage: nlm chat config <notebook-id> <setting> [value]\n")
 		fmt.Fprintf(os.Stderr, "\nSettings:\n")
 		fmt.Fprintf(os.Stderr, "  goal default              Reset to default conversational style\n")
 		fmt.Fprintf(os.Stderr, "  goal custom \"<prompt>\"    Set custom system prompt\n")
@@ -3013,14 +2886,14 @@ func setChatConfig(c *api.Client, args []string) error {
 	switch setting {
 	case "goal":
 		if len(args) < 3 {
-			return fmt.Errorf("usage: nlm chat-config <id> goal <default|custom \"prompt\">")
+			return fmt.Errorf("usage: nlm chat config <id> goal <default|custom \"prompt\">")
 		}
 		switch args[2] {
 		case "default":
 			return c.SetChatConfig(notebookID, api.ChatGoalDefault, "", api.ResponseLengthDefault)
 		case "custom":
 			if len(args) < 4 {
-				return fmt.Errorf("usage: nlm chat-config <id> goal custom \"your prompt\"")
+				return fmt.Errorf("usage: nlm chat config <id> goal custom \"your prompt\"")
 			}
 			prompt := strings.Join(args[3:], " ")
 			return c.SetChatConfig(notebookID, api.ChatGoalCustom, prompt, api.ResponseLengthDefault)
@@ -3029,7 +2902,7 @@ func setChatConfig(c *api.Client, args []string) error {
 		}
 	case "length":
 		if len(args) < 3 {
-			return fmt.Errorf("usage: nlm chat-config <id> length <default|longer|shorter>")
+			return fmt.Errorf("usage: nlm chat config <id> length <default|longer|shorter>")
 		}
 		switch args[2] {
 		case "default":

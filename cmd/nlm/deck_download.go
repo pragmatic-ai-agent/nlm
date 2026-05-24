@@ -25,6 +25,10 @@ func printDeckDownloadUsage(cmdName string) {
 }
 
 func validateDeckDownloadArgs(cmdName string, args []string) error {
+	return validateDeckDownloadArgsWithOptions(cmdName, args, globalOptions{})
+}
+
+func validateDeckDownloadArgsWithOptions(cmdName string, args []string, _ globalOptions) error {
 	if _, _, err := parseDeckDownloadArgs(args); err != nil {
 		fmt.Fprintf(os.Stderr, "nlm: %s: %v\n\n", cmdName, err)
 		printDeckDownloadUsage(cmdName)
@@ -73,6 +77,10 @@ func parseDeckDownloadArgs(args []string) (deckDownloadOptions, string, error) {
 }
 
 func runDeckDownloadFallback(args []string) error {
+	return runDeckDownloadFallbackWithOptions(args, globalOptions{})
+}
+
+func runDeckDownloadFallbackWithOptions(args []string, _ globalOptions) error {
 	opts, notebookID, err := parseDeckDownloadArgs(args)
 	if err != nil {
 		return err

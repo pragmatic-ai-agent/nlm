@@ -18,11 +18,15 @@ type researchOptions struct {
 }
 
 func currentResearchOptions() researchOptions {
+	return researchOptionsFromGlobals(packageGlobalOptions())
+}
+
+func researchOptionsFromGlobals(globals globalOptions) researchOptions {
 	return researchOptions{
-		Mode:   researchMode,
-		MD:     researchMD,
-		PollMS: researchPollMs,
-		Import: researchImport,
+		Mode:   globals.researchMode,
+		MD:     globals.researchMD,
+		PollMS: globals.researchPollMs,
+		Import: globals.researchImport,
 	}
 }
 
@@ -40,7 +44,11 @@ func printResearchUsage(cmdName string) {
 }
 
 func validateResearchArgs(cmdName string, args []string) error {
-	_, positional, err := parseResearchArgs(args)
+	return validateResearchArgsWithOptions(cmdName, args, packageGlobalOptions())
+}
+
+func validateResearchArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, positional, err := parseResearchArgsWithOptions(args, globals)
 	if err == nil && len(positional) >= 2 {
 		return nil
 	}
@@ -49,7 +57,11 @@ func validateResearchArgs(cmdName string, args []string) error {
 }
 
 func parseResearchArgs(args []string) (researchOptions, []string, error) {
-	opts := currentResearchOptions()
+	return parseResearchArgsWithOptions(args, packageGlobalOptions())
+}
+
+func parseResearchArgsWithOptions(args []string, globals globalOptions) (researchOptions, []string, error) {
+	opts := researchOptionsFromGlobals(globals)
 	flags := flag.NewFlagSet("research", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&opts.Mode, "mode", opts.Mode, "")
@@ -82,7 +94,11 @@ func parseResearchArgs(args []string) (researchOptions, []string, error) {
 }
 
 func runResearchCommand(c *api.Client, args []string) error {
-	opts, positional, err := parseResearchArgs(args)
+	return runResearchCommandWithOptions(c, args, packageGlobalOptions())
+}
+
+func runResearchCommandWithOptions(c *api.Client, args []string, globals globalOptions) error {
+	opts, positional, err := parseResearchArgsWithOptions(args, globals)
 	if err != nil {
 		return err
 	}

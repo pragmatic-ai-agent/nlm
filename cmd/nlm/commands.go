@@ -23,20 +23,22 @@ const (
 
 // command describes a single CLI command.
 type command struct {
-	name      string
-	aliases   []string
-	usage     string // one-line description for help text
-	argsUsage string // positional args hint for "usage: nlm <name> <argsUsage>"
-	section   string // help section header
-	surface   commandSurface
-	minArgs   int  // minimum positional args (after command name)
-	maxArgs   int  // maximum positional args; -1 = unlimited
-	noAuth    bool // true if command does not require authentication
-	noClient  bool // true if command does not need an API client (implies noAuth)
-	hidden    bool // true to hide from help text (experimental)
-	validate  func(cmdName string, args []string) error
-	help      func(cmdName string)
-	run       func(c *api.Client, args []string) error
+	name                string
+	aliases             []string
+	usage               string // one-line description for help text
+	argsUsage           string // positional args hint for "usage: nlm <name> <argsUsage>"
+	section             string // help section header
+	surface             commandSurface
+	minArgs             int  // minimum positional args (after command name)
+	maxArgs             int  // maximum positional args; -1 = unlimited
+	noAuth              bool // true if command does not require authentication
+	noClient            bool // true if command does not need an API client (implies noAuth)
+	hidden              bool // true to hide from help text (experimental)
+	validate            func(cmdName string, args []string) error
+	validateWithOptions func(cmdName string, args []string, opts globalOptions) error
+	help                func(cmdName string)
+	run                 func(c *api.Client, args []string) error
+	runWithOptions      func(c *api.Client, args []string, opts globalOptions) error
 }
 
 // actOnSourcesCmd builds a command entry for the 14 content transform commands.
@@ -49,10 +51,14 @@ func actOnSourcesCmd(name, action, usage string) command {
 		argsUsage: "<notebook-id> [source-id...]",
 		section:   "Content Transformation",
 		minArgs:   1, maxArgs: -1,
-		validate: validateSourceSelectionArgs,
-		help:     printSourceSelectionUsage,
+		validate:            validateSourceSelectionArgs,
+		validateWithOptions: validateSourceSelectionArgsWithOptions,
+		help:                printSourceSelectionUsage,
 		run: func(c *api.Client, args []string) error {
 			return runSourceSelectionAction(c, args, action)
+		},
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runSourceSelectionActionWithOptions(c, args, action, opts)
 		},
 	}
 }
@@ -171,9 +177,13 @@ var commands = []command{
 		usage: "List all notebooks", section: "Notebook",
 		argsUsage: "[flags]",
 		minArgs:   0, maxArgs: -1,
-		validate: validateNotebookListArgs,
-		help:     printNotebookListUsage,
-		run:      func(c *api.Client, args []string) error { return runNotebookList(c, args) },
+		validate:            validateNotebookListArgs,
+		validateWithOptions: validateNotebookListArgsWithOptions,
+		help:                printNotebookListUsage,
+		run:                 func(c *api.Client, args []string) error { return runNotebookList(c, args) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runNotebookListWithOptions(c, args, opts)
+		},
 	},
 	{
 		name: "create", argsUsage: "<title>",
@@ -274,29 +284,41 @@ var commands = []command{
 		name: "add", argsUsage: "<notebook-id> <source|-> [source...]",
 		usage: "Add one or more sources (files, URLs, or text; pass '-' to stream stdin as a single source)", section: "Source",
 		minArgs: 2, maxArgs: -1,
-		validate: validateSourceAddArgs,
-		help:     printSourceAddUsage,
-		run:      func(c *api.Client, args []string) error { return runSourceAdd(c, args) },
+		validate:            validateSourceAddArgs,
+		validateWithOptions: validateSourceAddArgsWithOptions,
+		help:                printSourceAddUsage,
+		run:                 func(c *api.Client, args []string) error { return runSourceAdd(c, args) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runSourceAddWithOptions(c, args, opts)
+		},
 	},
 	{
 		name: "sync", argsUsage: "<notebook-id> [paths...]",
 		usage: "Bundle local files into a txtar source and keep it in sync (auto-chunks at 5MB; see --help)", section: "Source",
 		minArgs: 1, maxArgs: -1,
-		hidden:   true, // top-level shortcut for `source sync`; kept first-class but de-duplicated from help
-		validate: validateSourceSyncArgs,
-		help:     printSourceSyncUsage,
-		run:      func(c *api.Client, args []string) error { return runSourceSync(c, args) },
+		hidden:              true, // top-level shortcut for `source sync`; kept first-class but de-duplicated from help
+		validate:            validateSourceSyncArgs,
+		validateWithOptions: validateSourceSyncArgsWithOptions,
+		help:                printSourceSyncUsage,
+		run:                 func(c *api.Client, args []string) error { return runSourceSync(c, args) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runSourceSyncWithOptions(c, args, opts)
+		},
 	},
 	{
 		name: "sync-pack", argsUsage: "[paths...]",
 		usage:   "Preview the txtar bytes that sync would upload (offline)",
 		section: "Source",
 		minArgs: 0, maxArgs: -1,
-		hidden:   true, // top-level shortcut for `source pack`; kept first-class but de-duplicated from help
-		noClient: true,
-		validate: validateSourcePackArgs,
-		help:     printSourcePackUsage,
-		run:      func(_ *api.Client, args []string) error { return runSourcePack(args) },
+		hidden:              true, // top-level shortcut for `source pack`; kept first-class but de-duplicated from help
+		noClient:            true,
+		validate:            validateSourcePackArgs,
+		validateWithOptions: validateSourcePackArgsWithOptions,
+		help:                printSourcePackUsage,
+		run:                 func(_ *api.Client, args []string) error { return runSourcePack(args) },
+		runWithOptions: func(_ *api.Client, args []string, opts globalOptions) error {
+			return runSourcePackWithOptions(args, opts)
+		},
 	},
 	{
 		name: "rm-source", aliases: []string{"source-rm"}, argsUsage: "<notebook-id> <source-id|-|a,b,c>",
@@ -530,10 +552,14 @@ var commands = []command{
 		usage:     "Print browser URL for slide deck download", section: "Deck",
 		minArgs: 1, maxArgs: -1,
 		noAuth: true, noClient: true,
-		hidden:   true,
-		validate: validateDeckDownloadArgs,
-		help:     printDeckDownloadUsage,
-		run:      func(c *api.Client, args []string) error { return runDeckDownloadFallback(args) },
+		hidden:              true,
+		validate:            validateDeckDownloadArgs,
+		validateWithOptions: validateDeckDownloadArgsWithOptions,
+		help:                printDeckDownloadUsage,
+		run:                 func(c *api.Client, args []string) error { return runDeckDownloadFallback(args) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runDeckDownloadFallbackWithOptions(args, opts)
+		},
 	},
 	{
 		name:      "download slide-deck",
@@ -541,10 +567,14 @@ var commands = []command{
 		usage:     "Print browser URL for slide deck download", section: "Deck",
 		minArgs: 1, maxArgs: -1,
 		noAuth: true, noClient: true,
-		hidden:   true,
-		validate: validateDeckDownloadArgs,
-		help:     printDeckDownloadUsage,
-		run:      func(c *api.Client, args []string) error { return runDeckDownloadFallback(args) },
+		hidden:              true,
+		validate:            validateDeckDownloadArgs,
+		validateWithOptions: validateDeckDownloadArgsWithOptions,
+		help:                printDeckDownloadUsage,
+		run:                 func(c *api.Client, args []string) error { return runDeckDownloadFallback(args) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runDeckDownloadFallbackWithOptions(args, opts)
+		},
 	},
 
 	// Audio operations
@@ -846,9 +876,13 @@ var commands = []command{
 		name: "source-guide", argsUsage: "<notebook-id> [source-id...]",
 		usage: "Show the per-source auto-summary and keyword chips (cached on disk)", section: "Generation",
 		minArgs: 1, maxArgs: -1,
-		validate: validateSourceSelectionArgs,
-		help:     printSourceSelectionUsage,
-		run:      func(c *api.Client, args []string) error { return runSourceGuide(c, args) },
+		validate:            validateSourceSelectionArgs,
+		validateWithOptions: validateSourceSelectionArgsWithOptions,
+		help:                printSourceSelectionUsage,
+		run:                 func(c *api.Client, args []string) error { return runSourceGuide(c, args) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runSourceGuideWithOptions(c, args, opts)
+		},
 	},
 	{
 		name: "generate-mindmap", argsUsage: "<notebook-id> <source-id> [source-id...]",
@@ -862,9 +896,13 @@ var commands = []command{
 		name: "generate-chat", argsUsage: "<notebook-id> <prompt>",
 		usage: "Stream a one-shot chat answer (use --conversation to follow up)", section: "Generation",
 		minArgs: 2, maxArgs: -1,
-		validate: validateGenerateChatArgs,
-		help:     printGenerateChatUsage,
-		run:      func(c *api.Client, args []string) error { return runGenerateChat(c, args) },
+		validate:            validateGenerateChatArgs,
+		validateWithOptions: validateGenerateChatArgsWithOptions,
+		help:                printGenerateChatUsage,
+		run:                 func(c *api.Client, args []string) error { return runGenerateChat(c, args) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runGenerateChatWithOptions(c, args, opts)
+		},
 	},
 	{
 		name: "report-suggestions", argsUsage: "<notebook-id>",
@@ -910,18 +948,26 @@ var commands = []command{
 		name: "generate-report", argsUsage: "<notebook-id>",
 		usage: "Generate multi-section report via chat (see --prompt, --sections)", section: "Generation",
 		minArgs: 1, maxArgs: 1,
-		validate: validateGenerateReportArgs,
-		help:     printGenerateReportUsage,
-		run:      func(c *api.Client, args []string) error { return runGenerateReport(c, args) },
+		validate:            validateGenerateReportArgs,
+		validateWithOptions: validateGenerateReportArgsWithOptions,
+		help:                printGenerateReportUsage,
+		run:                 func(c *api.Client, args []string) error { return runGenerateReport(c, args) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runGenerateReportWithOptions(c, args, opts)
+		},
 	},
 	// Chat operations
 	{
 		name: "chat", argsUsage: "<notebook-id> [conversation-id | prompt]",
 		usage: "Open interactive chat (one-shot if a prompt is given; -f <file> reads a long prompt from file)", section: "Chat",
 		minArgs: 1, maxArgs: -1,
-		validate: validateChatArgs,
-		help:     printChatUsage,
-		run:      func(c *api.Client, args []string) error { return runChat(c, args) },
+		validate:            validateChatArgs,
+		validateWithOptions: validateChatArgsWithOptions,
+		help:                printChatUsage,
+		run:                 func(c *api.Client, args []string) error { return runChat(c, args) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runChatWithOptions(c, args, opts)
+		},
 	},
 	{
 		name: "chat-list", argsUsage: "[notebook-id]",
@@ -948,9 +994,13 @@ var commands = []command{
 		usage: "Render a local chat transcript (see --citations)", section: "Chat",
 		minArgs: 2, maxArgs: 2,
 		noAuth: true, noClient: true,
-		validate: validateChatShowArgs,
-		help:     printChatShowUsage,
-		run:      func(_ *api.Client, args []string) error { return runChatShow(args) },
+		validate:            validateChatShowArgs,
+		validateWithOptions: validateChatShowArgsWithOptions,
+		help:                printChatShowUsage,
+		run:                 func(_ *api.Client, args []string) error { return runChatShow(args) },
+		runWithOptions: func(_ *api.Client, args []string, opts globalOptions) error {
+			return runChatShowWithOptions(args, opts)
+		},
 	},
 	{
 		name: "delete-chat", argsUsage: "<notebook-id>",
@@ -1009,9 +1059,13 @@ var commands = []command{
 		name: "research", argsUsage: "<notebook-id> \"query\"",
 		usage: "Run fast or deep research (JSON-lines by default; --md for markdown; --mode=fast|deep)", section: "Research",
 		minArgs: 2, maxArgs: -1,
-		validate: validateResearchArgs,
-		help:     printResearchUsage,
-		run:      func(c *api.Client, args []string) error { return runResearchCommand(c, args) },
+		validate:            validateResearchArgs,
+		validateWithOptions: validateResearchArgsWithOptions,
+		help:                printResearchUsage,
+		run:                 func(c *api.Client, args []string) error { return runResearchCommand(c, args) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runResearchCommandWithOptions(c, args, opts)
+		},
 	},
 
 	// Sharing operations
@@ -1046,8 +1100,13 @@ var commands = []command{
 		usage: "Set up authentication from a browser profile", section: "Other",
 		minArgs: 0, maxArgs: -1,
 		noAuth: true, noClient: true,
+		help: printAuthUsage,
 		run: func(c *api.Client, args []string) error {
 			_, _, err := handleAuth(args, debug)
+			return err
+		},
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			_, _, err := handleAuthWithOptions(args, opts)
 			return err
 		},
 	},
@@ -1057,6 +1116,9 @@ var commands = []command{
 		minArgs: 0, maxArgs: -1,
 		noAuth: true, noClient: true,
 		run: func(c *api.Client, args []string) error { return refreshCredentials(debug) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return refreshCredentials(opts.debug)
+		},
 	},
 	{
 		name: "feedback", argsUsage: "<message>",
@@ -1523,7 +1585,10 @@ func warnCompatibilityCommand(name string, cmd *command) {
 // generic — the per-command usage hint is printed separately to stderr.
 var errBadArgs = errors.New("invalid arguments")
 
-func validateCommandArgs(cmd *command, cmdName string, args []string) error {
+func validateCommandArgs(cmd *command, cmdName string, args []string, opts globalOptions) error {
+	if cmd.validateWithOptions != nil {
+		return cmd.validateWithOptions(cmdName, args, opts)
+	}
 	if cmd.validate != nil {
 		return cmd.validate(cmdName, args)
 	}
@@ -1538,6 +1603,13 @@ func validateCommandArgs(cmd *command, cmdName string, args []string) error {
 		return errBadArgs
 	}
 	return nil
+}
+
+func runCommand(cmd *command, c *api.Client, args []string, opts globalOptions) error {
+	if cmd.runWithOptions != nil {
+		return cmd.runWithOptions(c, args, opts)
+	}
+	return cmd.run(c, args)
 }
 
 // commandTableEntries returns all command entries for testing.

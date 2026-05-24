@@ -15,6 +15,7 @@ import (
 type notebookListOptions struct {
 	All   bool
 	Limit int // -1 means use the default TTY/piped behavior
+	JSON  bool
 }
 
 func printNotebookListUsage(cmdName string) {
@@ -22,6 +23,7 @@ func printNotebookListUsage(cmdName string) {
 	fmt.Fprintln(os.Stderr, "Flags:")
 	fmt.Fprintln(os.Stderr, "  --all          Show all notebooks when stdout is a terminal")
 	fmt.Fprintln(os.Stderr, "  --limit <n>    Show at most n notebooks (default: 10 on TTY, all when piped)")
+	fmt.Fprintln(os.Stderr, "  --json         Emit NDJSON instead of a table")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Examples:")
 	fmt.Fprintf(os.Stderr, "  nlm %s\n", cmdName)
@@ -30,7 +32,11 @@ func printNotebookListUsage(cmdName string) {
 }
 
 func validateNotebookListArgs(cmdName string, args []string) error {
-	_, err := parseNotebookListArgs(args)
+	return validateNotebookListArgsWithOptions(cmdName, args, packageGlobalOptions())
+}
+
+func validateNotebookListArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, err := parseNotebookListArgsWithOptions(args, globals)
 	if err == nil {
 		return nil
 	}
@@ -40,16 +46,29 @@ func validateNotebookListArgs(cmdName string, args []string) error {
 }
 
 func parseNotebookListArgs(args []string) (notebookListOptions, error) {
-	opts := notebookListOptions{Limit: -1}
+	return parseNotebookListArgsWithOptions(args, packageGlobalOptions())
+}
+
+func parseNotebookListArgsWithOptions(args []string, globals globalOptions) (notebookListOptions, error) {
+	opts := notebookListOptions{Limit: -1, JSON: globals.jsonOutput}
 	flags := flag.NewFlagSet("notebook-list", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.BoolVar(&opts.All, "all", false, "show all notebooks when stdout is a terminal")
 	flags.IntVar(&opts.Limit, "limit", -1, "show at most n notebooks")
-	if err := flags.Parse(args); err != nil {
+	flags.BoolVar(&opts.JSON, "json", opts.JSON, "emit NDJSON")
+	flagArgs, positional, err := splitCommandFlags(args, map[string]bool{
+		"all": true, "limit": true, "json": true,
+	}, map[string]bool{
+		"all": true, "json": true,
+	})
+	if err != nil {
 		return opts, err
 	}
-	if flags.NArg() != 0 {
-		return opts, fmt.Errorf("unexpected argument: %s", flags.Arg(0))
+	if err := flags.Parse(flagArgs); err != nil {
+		return opts, err
+	}
+	if len(positional) != 0 {
+		return opts, fmt.Errorf("unexpected argument: %s", positional[0])
 	}
 	if opts.Limit == 0 || opts.Limit < -1 {
 		return opts, fmt.Errorf("--limit must be greater than 0")
@@ -61,7 +80,11 @@ func parseNotebookListArgs(args []string) (notebookListOptions, error) {
 }
 
 func runNotebookList(c *api.Client, args []string) error {
-	opts, err := parseNotebookListArgs(args)
+	return runNotebookListWithOptions(c, args, packageGlobalOptions())
+}
+
+func runNotebookListWithOptions(c *api.Client, args []string, globals globalOptions) error {
+	opts, err := parseNotebookListArgsWithOptions(args, globals)
 	if err != nil {
 		return err
 	}
@@ -80,7 +103,7 @@ func renderNotebookList(out io.Writer, status io.Writer, notebooks []*api.Notebo
 	total := len(notebooks)
 	limit := notebookListLimit(total, opts, tty)
 
-	if jsonOutput {
+	if opts.JSON {
 		enc := json.NewEncoder(out)
 		for i := 0; i < limit; i++ {
 			nb := notebooks[i]

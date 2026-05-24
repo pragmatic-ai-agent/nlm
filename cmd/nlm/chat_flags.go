@@ -41,12 +41,16 @@ type reportOptions struct {
 }
 
 func currentChatRenderOptions() chatRenderOptions {
+	return chatRenderOptionsFromGlobals(packageGlobalOptions())
+}
+
+func chatRenderOptionsFromGlobals(globals globalOptions) chatRenderOptions {
 	return chatRenderOptions{
-		ShowThinking:     showThinking,
-		ThinkingJSONL:    thinkingJSONL,
-		Verbose:          verbose,
-		CitationMode:     citationMode,
-		ResolveCitations: resolveCitationsFlag,
+		ShowThinking:     globals.showThinking,
+		ThinkingJSONL:    globals.thinkingJSONL,
+		Verbose:          globals.verbose,
+		CitationMode:     globals.citationMode,
+		ResolveCitations: globals.resolveCitationsFlag,
 	}
 }
 
@@ -75,7 +79,6 @@ func printGenerateChatUsage(cmdName string) {
 	fmt.Fprintln(os.Stderr, "  --conversation, -c <id>  Continue an existing conversation by ID")
 	fmt.Fprintln(os.Stderr, "  --web                    Use the most recent server-side conversation")
 	fmt.Fprintln(os.Stderr, "  --thinking, --reasoning  Show thinking headers while streaming")
-	fmt.Fprintln(os.Stderr, "  --thinking-jsonl         Emit thinking/answer/citation JSON-lines events")
 	fmt.Fprintln(os.Stderr, "  --verbose, -v            Show full thinking traces while streaming")
 	fmt.Fprintln(os.Stderr, "  --citations <mode>       Citation rendering: off|block|stream|tail|overlay|json")
 	fmt.Fprintln(os.Stderr, "  --resolve-citations      Resolve citations to file:line for txtar-archive sources")
@@ -92,7 +95,11 @@ func printGenerateChatUsage(cmdName string) {
 }
 
 func validateGenerateChatArgs(cmdName string, args []string) error {
-	_, positional, err := parseGenerateChatArgs(args)
+	return validateGenerateChatArgsWithOptions(cmdName, args, packageGlobalOptions())
+}
+
+func validateGenerateChatArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, positional, err := parseGenerateChatArgsWithOptions(args, globals)
 	if err == nil && len(positional) >= 2 {
 		return nil
 	}
@@ -101,11 +108,15 @@ func validateGenerateChatArgs(cmdName string, args []string) error {
 }
 
 func parseGenerateChatArgs(args []string) (generateChatOptions, []string, error) {
+	return parseGenerateChatArgsWithOptions(args, packageGlobalOptions())
+}
+
+func parseGenerateChatArgsWithOptions(args []string, globals globalOptions) (generateChatOptions, []string, error) {
 	opts := generateChatOptions{
-		ConversationID: conversationID,
-		UseWebChat:     useWebChat,
-		Selectors:      currentSelectorOptions(),
-		Render:         currentChatRenderOptions(),
+		ConversationID: globals.conversationID,
+		UseWebChat:     globals.useWebChat,
+		Selectors:      selectorOptionsFromGlobals(globals),
+		Render:         chatRenderOptionsFromGlobals(globals),
 	}
 	flags := flag.NewFlagSet("generate-chat", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -116,26 +127,26 @@ func parseGenerateChatArgs(args []string) (generateChatOptions, []string, error)
 	appendSelectorFlags(flags, &opts.Selectors)
 
 	flagArgs, positional, err := splitCommandFlags(args, map[string]bool{
-		"conversation":   true,
-		"c":              true,
-		"web":            true,
-		"thinking":       true,
-		"reasoning":      true,
+		"conversation":      true,
+		"c":                 true,
+		"web":               true,
+		"thinking":          true,
+		"reasoning":         true,
 		"thinking-jsonl":    true,
 		"verbose":           true,
 		"v":                 true,
 		"citations":         true,
 		"resolve-citations": true,
 		"source-ids":        true,
-		"source-match":   true,
-		"source-exclude": true,
-		"label-ids":      true,
-		"label-match":    true,
-		"label-exclude":  true,
+		"source-match":      true,
+		"source-exclude":    true,
+		"label-ids":         true,
+		"label-match":       true,
+		"label-exclude":     true,
 	}, map[string]bool{
-		"web":            true,
-		"thinking":       true,
-		"reasoning":      true,
+		"web":               true,
+		"thinking":          true,
+		"reasoning":         true,
 		"thinking-jsonl":    true,
 		"verbose":           true,
 		"v":                 true,
@@ -154,7 +165,11 @@ func parseGenerateChatArgs(args []string) (generateChatOptions, []string, error)
 }
 
 func runGenerateChat(c *api.Client, args []string) error {
-	opts, positional, err := parseGenerateChatArgs(args)
+	return runGenerateChatWithOptions(c, args, packageGlobalOptions())
+}
+
+func runGenerateChatWithOptions(c *api.Client, args []string, globals globalOptions) error {
+	opts, positional, err := parseGenerateChatArgsWithOptions(args, globals)
 	if err != nil {
 		return err
 	}
@@ -167,7 +182,6 @@ func printChatUsage(cmdName string) {
 	fmt.Fprintln(os.Stderr, "  --prompt-file, -f <path> Read the prompt from a file ('-' reads stdin)")
 	fmt.Fprintln(os.Stderr, "  --history                Show previous chat conversation on start")
 	fmt.Fprintln(os.Stderr, "  --thinking, --reasoning  Show thinking headers while streaming")
-	fmt.Fprintln(os.Stderr, "  --thinking-jsonl         Emit thinking/answer/citation JSON-lines events")
 	fmt.Fprintln(os.Stderr, "  --verbose, -v            Show full thinking traces while streaming")
 	fmt.Fprintln(os.Stderr, "  --citations <mode>       Citation rendering: off|block|stream|tail|overlay|json")
 	fmt.Fprintln(os.Stderr, "  --resolve-citations      Resolve citations to file:line for txtar-archive sources")
@@ -185,7 +199,11 @@ func printChatUsage(cmdName string) {
 }
 
 func validateChatArgs(cmdName string, args []string) error {
-	_, positional, err := parseChatArgs(args)
+	return validateChatArgsWithOptions(cmdName, args, packageGlobalOptions())
+}
+
+func validateChatArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, positional, err := parseChatArgsWithOptions(args, globals)
 	if err == nil && len(positional) >= 1 {
 		return nil
 	}
@@ -194,11 +212,15 @@ func validateChatArgs(cmdName string, args []string) error {
 }
 
 func parseChatArgs(args []string) (chatOptions, []string, error) {
+	return parseChatArgsWithOptions(args, packageGlobalOptions())
+}
+
+func parseChatArgsWithOptions(args []string, globals globalOptions) (chatOptions, []string, error) {
 	opts := chatOptions{
-		PromptFile:  promptFile,
-		ShowHistory: showChatHistory,
-		Selectors:   currentSelectorOptions(),
-		Render:      currentChatRenderOptions(),
+		PromptFile:  globals.promptFile,
+		ShowHistory: globals.showChatHistory,
+		Selectors:   selectorOptionsFromGlobals(globals),
+		Render:      chatRenderOptionsFromGlobals(globals),
 	}
 	flags := flag.NewFlagSet("chat", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -209,26 +231,26 @@ func parseChatArgs(args []string) (chatOptions, []string, error) {
 	appendSelectorFlags(flags, &opts.Selectors)
 
 	flagArgs, positional, err := splitCommandFlags(args, map[string]bool{
-		"prompt-file":    true,
-		"f":              true,
-		"history":        true,
-		"thinking":       true,
-		"reasoning":      true,
+		"prompt-file":       true,
+		"f":                 true,
+		"history":           true,
+		"thinking":          true,
+		"reasoning":         true,
 		"thinking-jsonl":    true,
 		"verbose":           true,
 		"v":                 true,
 		"citations":         true,
 		"resolve-citations": true,
 		"source-ids":        true,
-		"source-match":   true,
-		"source-exclude": true,
-		"label-ids":      true,
-		"label-match":    true,
-		"label-exclude":  true,
+		"source-match":      true,
+		"source-exclude":    true,
+		"label-ids":         true,
+		"label-match":       true,
+		"label-exclude":     true,
 	}, map[string]bool{
-		"history":        true,
-		"thinking":       true,
-		"reasoning":      true,
+		"history":           true,
+		"thinking":          true,
+		"reasoning":         true,
 		"thinking-jsonl":    true,
 		"verbose":           true,
 		"v":                 true,
@@ -247,7 +269,11 @@ func parseChatArgs(args []string) (chatOptions, []string, error) {
 }
 
 func runChat(c *api.Client, args []string) error {
-	opts, positional, err := parseChatArgs(args)
+	return runChatWithOptions(c, args, packageGlobalOptions())
+}
+
+func runChatWithOptions(c *api.Client, args []string, globals globalOptions) error {
+	opts, positional, err := parseChatArgsWithOptions(args, globals)
 	if err != nil {
 		return err
 	}
@@ -281,7 +307,11 @@ func printChatShowUsage(cmdName string) {
 }
 
 func validateChatShowArgs(cmdName string, args []string) error {
-	_, positional, err := parseChatShowArgs(args)
+	return validateChatShowArgsWithOptions(cmdName, args, packageGlobalOptions())
+}
+
+func validateChatShowArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, positional, err := parseChatShowArgsWithOptions(args, globals)
 	if err == nil && len(positional) == 2 {
 		return nil
 	}
@@ -290,7 +320,11 @@ func validateChatShowArgs(cmdName string, args []string) error {
 }
 
 func parseChatShowArgs(args []string) (chatRenderOptions, []string, error) {
-	opts := currentChatRenderOptions()
+	return parseChatShowArgsWithOptions(args, packageGlobalOptions())
+}
+
+func parseChatShowArgsWithOptions(args []string, globals globalOptions) (chatRenderOptions, []string, error) {
+	opts := chatRenderOptionsFromGlobals(globals)
 	flags := flag.NewFlagSet("chat-show", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.BoolVar(&opts.ShowThinking, "thinking", opts.ShowThinking, "")
@@ -318,7 +352,11 @@ func parseChatShowArgs(args []string) (chatRenderOptions, []string, error) {
 }
 
 func runChatShow(args []string) error {
-	opts, positional, err := parseChatShowArgs(args)
+	return runChatShowWithOptions(args, packageGlobalOptions())
+}
+
+func runChatShowWithOptions(args []string, globals globalOptions) error {
+	opts, positional, err := parseChatShowArgsWithOptions(args, globals)
 	if err != nil {
 		return err
 	}
@@ -332,7 +370,6 @@ func printGenerateReportUsage(cmdName string) {
 	fmt.Fprintln(os.Stderr, "  --instructions <text>    Set notebook instructions before generation")
 	fmt.Fprintln(os.Stderr, "  --sections <n>           Generate at most n sections (0 = all)")
 	fmt.Fprintln(os.Stderr, "  --thinking, --reasoning  Show thinking headers while streaming")
-	fmt.Fprintln(os.Stderr, "  --thinking-jsonl         Emit thinking/answer/citation JSON-lines events")
 	fmt.Fprintln(os.Stderr, "  --verbose, -v            Show full thinking traces while streaming")
 	fmt.Fprintln(os.Stderr, "  --citations <mode>       Citation rendering: off|block|stream|tail|overlay|json")
 	fmt.Fprintln(os.Stderr, "  --resolve-citations      Resolve citations to file:line for txtar-archive sources")
@@ -350,7 +387,11 @@ func printGenerateReportUsage(cmdName string) {
 }
 
 func validateGenerateReportArgs(cmdName string, args []string) error {
-	_, positional, err := parseGenerateReportArgs(args)
+	return validateGenerateReportArgsWithOptions(cmdName, args, packageGlobalOptions())
+}
+
+func validateGenerateReportArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, positional, err := parseGenerateReportArgsWithOptions(args, globals)
 	if err == nil && len(positional) == 1 {
 		return nil
 	}
@@ -359,12 +400,16 @@ func validateGenerateReportArgs(cmdName string, args []string) error {
 }
 
 func parseGenerateReportArgs(args []string) (reportOptions, []string, error) {
+	return parseGenerateReportArgsWithOptions(args, packageGlobalOptions())
+}
+
+func parseGenerateReportArgsWithOptions(args []string, globals globalOptions) (reportOptions, []string, error) {
 	opts := reportOptions{
-		Prompt:       reportPrompt,
-		Instructions: reportInstructions,
-		Sections:     reportSections,
-		Selectors:    currentSelectorOptions(),
-		Render:       currentChatRenderOptions(),
+		Prompt:       globals.reportPrompt,
+		Instructions: globals.reportInstructions,
+		Sections:     globals.reportSections,
+		Selectors:    selectorOptionsFromGlobals(globals),
+		Render:       chatRenderOptionsFromGlobals(globals),
 	}
 	flags := flag.NewFlagSet("generate-report", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -375,25 +420,25 @@ func parseGenerateReportArgs(args []string) (reportOptions, []string, error) {
 	appendSelectorFlags(flags, &opts.Selectors)
 
 	flagArgs, positional, err := splitCommandFlags(args, map[string]bool{
-		"prompt":         true,
-		"instructions":   true,
-		"sections":       true,
-		"thinking":       true,
-		"reasoning":      true,
+		"prompt":            true,
+		"instructions":      true,
+		"sections":          true,
+		"thinking":          true,
+		"reasoning":         true,
 		"thinking-jsonl":    true,
 		"verbose":           true,
 		"v":                 true,
 		"citations":         true,
 		"resolve-citations": true,
 		"source-ids":        true,
-		"source-match":   true,
-		"source-exclude": true,
-		"label-ids":      true,
-		"label-match":    true,
-		"label-exclude":  true,
+		"source-match":      true,
+		"source-exclude":    true,
+		"label-ids":         true,
+		"label-match":       true,
+		"label-exclude":     true,
 	}, map[string]bool{
-		"thinking":       true,
-		"reasoning":      true,
+		"thinking":          true,
+		"reasoning":         true,
 		"thinking-jsonl":    true,
 		"verbose":           true,
 		"v":                 true,
@@ -415,7 +460,11 @@ func parseGenerateReportArgs(args []string) (reportOptions, []string, error) {
 }
 
 func runGenerateReport(c *api.Client, args []string) error {
-	opts, positional, err := parseGenerateReportArgs(args)
+	return runGenerateReportWithOptions(c, args, packageGlobalOptions())
+}
+
+func runGenerateReportWithOptions(c *api.Client, args []string, globals globalOptions) error {
+	opts, positional, err := parseGenerateReportArgsWithOptions(args, globals)
 	if err != nil {
 		return err
 	}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,8 +24,9 @@ var (
 func TestMain(m *testing.M) {
 	// Build the nlm binary for testing
 	cmd := exec.Command("go", "build", "-o", "nlm_test", ".")
-	if err := cmd.Run(); err != nil {
-		panic("failed to build nlm for testing: " + err.Error())
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		panic("failed to build nlm for testing: " + err.Error() + "\n" + string(output))
 	}
 	defer os.Remove("nlm_test")
 
@@ -305,6 +307,28 @@ func TestCommandLocalHelp(t *testing.T) {
 				"--source-match <regex>",
 			},
 		},
+		{
+			name: "auth short help",
+			args: []string{"auth", "-h"},
+			contains: []string{
+				"Usage: nlm auth [login] [options] [profile-name]",
+				"-print-env",
+				"-authuser",
+				"-cdp-url",
+				"-keep-open",
+			},
+		},
+		{
+			name: "auth long help",
+			args: []string{"auth", "--help"},
+			contains: []string{
+				"Usage: nlm auth [login] [options] [profile-name]",
+				"-print-env",
+				"-authuser",
+				"-cdp-url",
+				"-keep-open",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -320,6 +344,37 @@ func TestCommandLocalHelp(t *testing.T) {
 				if !strings.Contains(outputStr, want) {
 					t.Fatalf("output missing %q\n%s", want, outputStr)
 				}
+			}
+			if tt.name == "chat help" && strings.Contains(outputStr, "--thinking-jsonl") {
+				t.Fatalf("chat help shows deprecated --thinking-jsonl\n%s", outputStr)
+			}
+		})
+	}
+}
+
+func TestCustomCommandHelpDoesNotUseGenericFallback(t *testing.T) {
+	tmpHome, err := os.MkdirTemp("", "nlm-test-home-*")
+	if err != nil {
+		t.Fatalf("failed to create temp home: %v", err)
+	}
+	defer os.RemoveAll(tmpHome)
+
+	for _, cmdEntry := range commandTableEntries() {
+		cmdEntry := cmdEntry
+		if cmdEntry.help == nil || cmdEntry.surface != surfaceStable || cmdEntry.hidden {
+			continue
+		}
+		t.Run(cmdEntry.name, func(t *testing.T) {
+			args := append(strings.Fields(cmdEntry.name), "-h")
+			cmd := exec.Command("./nlm_test", args...)
+			cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + tmpHome}
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("command failed: %v\n%s", err, output)
+			}
+			generic := fmt.Sprintf("usage: nlm %s %s\n  %s\n", cmdEntry.name, cmdEntry.argsUsage, cmdEntry.usage)
+			if strings.Contains(string(output), generic) {
+				t.Fatalf("custom help used generic fallback\n%s", output)
 			}
 		})
 	}
