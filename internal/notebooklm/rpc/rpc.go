@@ -333,12 +333,16 @@ func NewWithConfig(authToken, cookies string, serviceConfig ServiceConfig, optio
 		"hl":    "en",
 		"rt":    "c",
 	}
+	authUser := os.Getenv("NLM_AUTHUSER")
+	if authUser != "" {
+		urlParams["authuser"] = authUser
+	}
 	for k, v := range serviceConfig.URLParams {
 		if v == "" {
 			continue
 		}
 		switch k {
-		case "bl", "f.sid", "rt":
+		case "bl", "f.sid", "rt", "authuser":
 			// Prefer live session parameters over generated defaults.
 			continue
 		default:
@@ -362,6 +366,9 @@ func NewWithConfig(authToken, cookies string, serviceConfig ServiceConfig, optio
 			"pragma":          "no-cache",
 		},
 		URLParams: urlParams,
+	}
+	if authUser != "" {
+		config.Headers["x-goog-authuser"] = authUser
 	}
 	return &Client{
 		Config: config,

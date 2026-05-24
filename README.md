@@ -22,7 +22,8 @@ nlm --cookies 'SID=...; HSID=...; SSID=...' notebook list
 nlm --auth <auth-token> notebook list
 ```
 
-For multi-account setups, use `nlm auth --authuser N` or export `NLM_AUTHUSER=N`.
+For multi-account setups, use `nlm auth --authuser N`, then pass
+`--authuser N` on commands or export `NLM_AUTHUSER=N`.
 
 ## Usage
 
@@ -118,6 +119,7 @@ and friends are the manual surface for hand-curated labels.
 nlm create-audio <notebook-id> "deep dive on topic X"
 nlm create-video <notebook-id> "whiteboard walkthrough"
 nlm create-slides <notebook-id> "presentation summary"
+nlm deck create <notebook-id> "presentation summary"
 nlm report-suggestions <notebook-id>
 nlm create-report <notebook-id> <report-type> "focused brief"
 
@@ -131,10 +133,16 @@ nlm audio get <notebook-id>
 nlm audio share <notebook-id>
 nlm audio delete <notebook-id>
 nlm --direct-rpc audio download <notebook-id> overview.mp3
+nlm video create <notebook-id> "whiteboard walkthrough"
 nlm video list <notebook-id>
 nlm video get <notebook-id>
-nlm --direct-rpc video download <notebook-id> overview.mp4
+nlm video download <notebook-id> overview.mp4
+nlm deck download <notebook-id> --id <artifact-id> --format pptx --output deck.pptx
 ```
+
+If generated audio, video, or slide deck output cannot be fetched directly from the CLI,
+the download command prints the NotebookLM browser URL so you can download it
+from the web UI.
 
 ### Chat
 

@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,7 @@ var (
 	experimental         bool // surface experimental commands in help + allow them to run
 	authToken            string
 	cookies              string
+	authUser             string
 	debug                bool
 	debugDumpPayload     bool
 	debugParsing         bool
@@ -116,6 +118,7 @@ func init() {
 	flag.StringVar(&chromeProfile, "profile", os.Getenv("NLM_BROWSER_PROFILE"), "Chrome profile to use")
 	flag.StringVar(&authToken, "auth", os.Getenv("NLM_AUTH_TOKEN"), "auth token (or set NLM_AUTH_TOKEN)")
 	flag.StringVar(&cookies, "cookies", os.Getenv("NLM_COOKIES"), "cookies for authentication (or set NLM_COOKIES)")
+	flag.StringVar(&authUser, "authuser", os.Getenv("NLM_AUTHUSER"), "Google account index for multi-account profiles")
 	flag.StringVar(&mimeType, "mime", "", "specify MIME type for content (e.g. 'application/pdf', 'text/plain')")
 	flag.StringVar(&mimeType, "mime-type", "", "specify MIME type for content (alias for -mime)")
 	flag.StringVar(&sourceName, "name", "", "custom name for added source")
@@ -253,6 +256,12 @@ func main() {
 
 	// Load stored environment variables
 	loadStoredEnv()
+	if authUser == "" {
+		authUser = os.Getenv("NLM_AUTHUSER")
+	}
+	if authUser != "" {
+		os.Setenv("NLM_AUTHUSER", authUser)
+	}
 
 	// Set skip sources flag if specified
 	if skipSources {
@@ -562,9 +571,8 @@ func run() error {
 		if debug {
 			client.SetDebug(true)
 		}
-		// Set authuser for multi-account support
-		if v := os.Getenv("NLM_AUTHUSER"); v != "" {
-			client.SetAuthUser(v)
+		if authUser != "" {
+			client.SetAuthUser(authUser)
 		}
 		// Set direct RPC flag if specified
 		if useDirectRPC {
@@ -4419,11 +4427,7 @@ func downloadAudioOverview(c *api.Client, notebookID string, filename string) er
 	// Download the audio
 	audioResult, err := c.DownloadAudioOverview(notebookID)
 	if err != nil {
-		// Provide actionable guidance for the known CDN auth issue
-		if strings.Contains(err.Error(), "browser authentication") || strings.Contains(err.Error(), "text/html") {
-			return fmt.Errorf("download audio overview: Google CDN requires browser session cookies that cannot be forwarded via CLI; download manually from https://notebooklm.google.com/notebook/%s", notebookID)
-		}
-		return fmt.Errorf("download audio overview: %w", err)
+		return audioDownloadUnavailableError(notebookID, err)
 	}
 
 	// Save to file
@@ -4442,8 +4446,25 @@ func downloadAudioOverview(c *api.Client, notebookID string, filename string) er
 	return nil
 }
 
+func audioDownloadUnavailableError(notebookID string, err error) error {
+	u := printDownloadBrowserFallback("audio overview", notebookID)
+	return fmt.Errorf("download audio overview: direct download unavailable (%w); open %s in a browser", err, u)
+}
+
+func notebookBrowserURL(notebookID string) string {
+	return "https://notebooklm.google.com/notebook/" + url.PathEscape(notebookID)
+}
+
+func printDownloadBrowserFallback(kind, notebookID string) string {
+	u := notebookBrowserURL(notebookID)
+	fmt.Println(u)
+	fmt.Fprintf(os.Stderr, "Open %s in a browser to download the %s from NotebookLM.\n", u, kind)
+	return u
+}
+
 func downloadVideoOverview(c *api.Client, notebookID string, filename string) error {
 	fmt.Fprintf(os.Stderr, "Downloading video overview for notebook %s...\n", notebookID)
+	c.SetUseDirectRPC(true)
 
 	// Generate default filename if not provided
 	if filename == "" {
@@ -4454,7 +4475,8 @@ func downloadVideoOverview(c *api.Client, notebookID string, filename string) er
 	videoResult, err := c.DownloadVideoOverview(notebookID)
 	if err != nil {
 		if strings.Contains(err.Error(), "browser authentication") || strings.Contains(err.Error(), "manual") || strings.Contains(err.Error(), "not available") {
-			return fmt.Errorf("download video overview: Google CDN requires browser session cookies that cannot be forwarded via CLI; download manually from https://notebooklm.google.com/notebook/%s", notebookID)
+			u := printDownloadBrowserFallback("video overview", notebookID)
+			return fmt.Errorf("download video overview: direct download unavailable; open %s in a browser", u)
 		}
 		return fmt.Errorf("download video overview: %w", err)
 	}
@@ -4464,7 +4486,8 @@ func downloadVideoOverview(c *api.Client, notebookID string, filename string) er
 		// Use authenticated download for URLs
 		if err := c.DownloadVideoWithAuth(videoResult.VideoData, filename); err != nil {
 			if strings.Contains(err.Error(), "text/html") {
-				return fmt.Errorf("download video: Google CDN requires browser session cookies that cannot be forwarded via CLI; download manually from https://notebooklm.google.com/notebook/%s", notebookID)
+				u := printDownloadBrowserFallback("video overview", notebookID)
+				return fmt.Errorf("download video: browser-authenticated download required; open %s in a browser", u)
 			}
 			return fmt.Errorf("download video with auth: %w", err)
 		}

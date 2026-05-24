@@ -79,7 +79,9 @@ nlm refresh
 
 **Wrong Google account** — Use `--profile` to select the browser profile associated with the correct account.
 
-**Multiple Google accounts in one profile** — Use `--authuser 1` (or `NLM_AUTHUSER=1`) to authenticate with a non-default account.
+**Multiple Google accounts in one profile** — Use `nlm auth --authuser 1` to
+authenticate with a non-default account. For other commands, pass
+`--authuser 1` or export `NLM_AUTHUSER=1`.
 
 **Windows with Google 2FA** — The automated browser may trigger "unsafe browser" warnings. As a workaround, use `--cdp-url` with a manually-launched Chrome instance that has remote debugging enabled:
 

@@ -176,6 +176,12 @@ func TestHelpCommand(t *testing.T) {
 			wantExit: false,
 			contains: []string{"Usage: nlm <command>", "Notebook Commands"},
 		},
+		{
+			name:     "authuser global flag before help",
+			args:     []string{"--authuser", "1", "--help"},
+			wantExit: false,
+			contains: []string{"Usage: nlm <command>", "Notebook Commands"},
+		},
 	}
 
 	for _, tt := range tests {

@@ -37,7 +37,9 @@ Always prefer live help output when it disagrees with the reference.
 - Surface full UUIDs for notebooks, sources, conversations, notes, and artifacts in responses. Follow-up commands need them.
 - Use `-y` for destructive operations in non-interactive contexts, for example `nlm -y notebook delete <id>`.
 - Use `nlm auth --authuser N` or `NLM_AUTHUSER=N` for non-default Google accounts.
-- Use `--direct-rpc` for `audio download` and `video download`.
+- Use `--direct-rpc` for `audio download`; if the direct fetch is unavailable,
+  it prints the NotebookLM browser URL. `video download` enables the required
+  direct-RPC path itself and uses the same browser fallback.
 - Prefer canonical grouped commands in all new guidance.
 
 ## Common Workflows

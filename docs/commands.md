@@ -16,6 +16,7 @@ Run `nlm <command> -h` for exact per-command usage.
 | Flag | Applies to | Purpose |
 |------|------------|---------|
 | `--auth TOKEN`, `--cookies COOKIES` | most commands | Supply credentials non-interactively |
+| `--authuser N` | most commands | Select a Google account in a multi-account browser profile |
 | `--debug` | most commands | Print debug output to stderr |
 | `--json` | list and sync output | Emit JSON / JSON-lines output |
 | `--experimental` | hidden commands | Enable experimental commands in help and execution |
@@ -111,6 +112,8 @@ labels yourself.
 | `nlm create-audio NOTEBOOK_ID "Conversational summary"` | Create an audio overview |
 | `nlm create-video NOTEBOOK_ID "Whiteboard walkthrough"` | Create a video overview |
 | `nlm create-slides NOTEBOOK_ID "Presentation summary"` | Create a slide deck |
+| `nlm video create NOTEBOOK_ID "Whiteboard walkthrough"` | Create a video overview |
+| `nlm deck create NOTEBOOK_ID "Presentation summary"` | Create a slide deck |
 | `nlm report-suggestions NOTEBOOK_ID` | Suggest report topics |
 | `nlm create-report NOTEBOOK_ID REPORT_TYPE "Focused brief"` | Create a report artifact |
 
@@ -120,12 +123,19 @@ labels yourself.
 |---------|-------------|
 | `nlm audio list NOTEBOOK_ID` | List audio overviews |
 | `nlm audio get NOTEBOOK_ID` | Get audio overview details |
-| `nlm --direct-rpc audio download NOTEBOOK_ID [FILE]` | Download the audio file |
+| `nlm --direct-rpc audio download NOTEBOOK_ID [FILE]` | Download the audio file, or print the browser URL when direct download is unavailable |
 | `nlm audio delete NOTEBOOK_ID` | Delete an audio overview |
 | `nlm audio share NOTEBOOK_ID` | Share an audio overview |
 | `nlm video list NOTEBOOK_ID` | List video overviews |
 | `nlm video get NOTEBOOK_ID` | Get video overview details |
-| `nlm --direct-rpc video download NOTEBOOK_ID [FILE]` | Download the video file |
+| `nlm video download NOTEBOOK_ID [FILE]` | Download the video file, or print the browser URL when direct download is unavailable |
+
+## Deck
+
+| Command | Description |
+|---------|-------------|
+| `nlm deck create NOTEBOOK_ID "Presentation summary"` | Create a slide deck |
+| `nlm deck download NOTEBOOK_ID --id ARTIFACT_ID --format pptx --output deck.pptx` | Print the browser URL for slide deck download |
 
 ## Artifact
 

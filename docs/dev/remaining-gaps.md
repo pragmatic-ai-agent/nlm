@@ -1,13 +1,14 @@
 ---
 title: Remaining Gaps and Audit Notes
-date: 2026-04-21
+date: 2026-05-16
 ---
 
 # nlm Remaining Gaps
 
-This file was re-audited against the current tree on 2026-04-21. It tracks
-only gaps that still matter after checking the live CLI, API, and MCP code
-paths.
+This file was re-audited against the current tree on 2026-05-16. The local
+release gate (`go test ./...`) passes. The items below are remaining
+deferred, low-priority, or HAR-dependent gaps after checking the live CLI,
+API, and MCP code paths; they are not current local test blockers.
 
 ### 1. Generated analytics proto remains scalar
 
@@ -30,8 +31,8 @@ manual-browser fallback instead of probing speculative RPC shapes.
 
 Status: open. This is not an MCP gap. HAR would help automation, but the
 current user-visible limitation is the lack of a verified automated download
-path plus
-CDN browser-auth requirements.
+path plus CDN browser-auth requirements. The CLI fallback prints the
+NotebookLM notebook URL so the user can finish the download in a browser.
 
 ### 3. Weakly verified encoder paths still exist
 
@@ -44,20 +45,26 @@ weakly verified:
   `[%project_id%, %feedback_type%, %feedback_text%]` shape.
 - `DeleteNotes` (`AH0mwd`) works in practice but is not pinned by a
   HAR-backed encoder test.
+- `GenerateNotebookGuide` (`VfAZjd`) has a hand-written encoder that emits
+  `[%project_id%, %guide_type%]`, but both outline and mind-map variants
+  still need HAR capture before the guard comment can call the shape verified.
 - `GenerateFreeFormStreamed` exists as a gRPC-Web chat path in
   `internal/notebooklm/api`; the batchexecute method encoder is not a live
   CLI path.
 
 Status: low priority cleanup / verification work.
 
-### 4. `artifact get` returns API endpoint errors
+### 4. `artifact get` direct path remains unverified
 
-`nlm artifact get <artifact-id>` returns API endpoint errors against the
-live service. The RPC wire format has not been re-captured since the
-2026-04-07 session and the current encoder may not match. May need a
-direct-RPC fallback or a fresh HAR to derive the right shape.
+`nlm artifact get <artifact-id>` now tries the JS-bundle-canonical
+`v9rmvd` direct RPC first, then falls back to scanning
+`ListRecentlyViewedProjects` plus `ListArtifacts` when the direct path
+fails or returns an unparsable response. That keeps the user-visible command
+on the same list-scan behavior the CLI used before the direct probe.
 
-Status: open, HAR helpful but not strictly required.
+Status: open for direct-path verification only. A fresh HAR would confirm
+whether `v9rmvd` is callable on the live service or should remain a
+best-effort fast path behind the list-scan fallback.
 
 ### 5. `chat config` server semantics unverified
 
@@ -105,6 +112,7 @@ Status: HAR-blocked for semantics only. The current fallback is safe.
    UX or get a real CDN capture and a browser-assisted path.
 3. Remove dead generated RPC stubs so future audits do not
    mistake them for live command paths.
-4. Re-capture `artifact get` against the live service and fix the encoder.
+4. Re-capture `artifact get` against the live service and either verify
+   `v9rmvd` or keep the list-scan fallback as the canonical path.
 5. Verify `chat config` end-to-end (or hide it until there is a real caller).
 6. Capture `izAoDd` only if a real bulk-add CLI caller is introduced.

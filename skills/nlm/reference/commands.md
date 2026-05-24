@@ -80,6 +80,8 @@ nlm label attach <notebook-id> <label-id|name> <source-id|name> # Attach one sou
 nlm create-audio <notebook-id> <instructions>       # Create audio overview
 nlm create-video <notebook-id> <instructions>       # Create video overview
 nlm create-slides <notebook-id> <instructions>      # Create slide deck
+nlm video create <notebook-id> <instructions>       # Create video overview
+nlm deck create <notebook-id> <instructions>        # Create slide deck
 nlm create-report <notebook-id> <type> [desc] [instructions]
 nlm report-suggestions <notebook-id>                # Valid report topics/types
 nlm audio-suggestions <notebook-id>                 # Audio blueprint JSON lines
@@ -90,13 +92,14 @@ nlm audio-suggestions <notebook-id>                 # Audio blueprint JSON lines
 ```bash
 nlm audio list <notebook-id>             # List audio overviews
 nlm audio get <notebook-id>              # Get audio details
-nlm --direct-rpc audio download <notebook-id> [file]
+nlm --direct-rpc audio download <notebook-id> [file] # Downloads or prints browser URL fallback
 nlm audio delete <notebook-id>           # Delete audio overview
 nlm audio share <notebook-id>            # Share audio overview
 
 nlm video list <notebook-id>             # List video overviews
 nlm video get <notebook-id>              # Get video details
-nlm --direct-rpc video download <notebook-id> [file]
+nlm video download <notebook-id> [file]  # Downloads or prints browser URL fallback
+nlm deck download <notebook-id> --id <artifact-id> --format pptx --output deck.pptx
 ```
 
 ## Artifacts
