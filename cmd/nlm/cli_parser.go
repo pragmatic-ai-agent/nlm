@@ -327,8 +327,9 @@ var commandLocalFlags = map[string]map[string]bool{
 	},
 	"generate-chat":   chatCommandLocalFlags(),
 	"chat":            chatCommandLocalFlags(),
-	"chat show":       {"thinking": true, "reasoning": true, "citations": true},
-	"chat-show":       {"thinking": true, "reasoning": true, "citations": true},
+	"chat show":       chatShowCommandLocalFlags(),
+	"chat-show":       chatShowCommandLocalFlags(),
+	"create-report":   selectorCommandLocalFlags(),
 	"generate-report": reportCommandLocalFlags(),
 	"research": {
 		"mode": true, "md": true, "poll-ms": true, "import": true,
@@ -341,6 +342,8 @@ var commandLocalFlags = map[string]map[string]bool{
 		"id": true, "artifact-id": true, "format": true, "f": true,
 		"output": true, "o": true,
 	},
+	"artifact update": {"name": true, "n": true},
+	"update-artifact": {"name": true, "n": true},
 }
 
 func chatCommandLocalFlags() map[string]bool {
@@ -362,6 +365,20 @@ func reportCommandLocalFlags() map[string]bool {
 	return flags
 }
 
+func chatShowCommandLocalFlags() map[string]bool {
+	return map[string]bool{
+		"thinking": true, "reasoning": true,
+		"citations": true, "resolve-citations": true,
+	}
+}
+
+func selectorCommandLocalFlags() map[string]bool {
+	return map[string]bool{
+		"source-ids": true, "source-match": true, "source-exclude": true,
+		"label-ids": true, "label-match": true, "label-exclude": true,
+	}
+}
+
 func commandHelpRequested(args []string) bool {
 	for _, arg := range args {
 		if arg == "--" {
@@ -376,50 +393,21 @@ func commandHelpRequested(args []string) bool {
 
 func packageGlobalOptions() globalOptions {
 	return globalOptions{
-		showVersion:          showVersion,
-		experimental:         experimental,
-		authToken:            authToken,
-		cookies:              cookies,
-		authUser:             authUser,
-		debug:                debug,
-		debugDumpPayload:     debugDumpPayload,
-		debugParsing:         debugParsing,
-		debugFieldMapping:    debugFieldMapping,
-		chromeProfile:        chromeProfile,
-		mimeType:             mimeType,
-		chunkedResponse:      chunkedResponse,
-		useDirectRPC:         useDirectRPC,
-		skipSources:          skipSources,
-		yes:                  yes,
-		sourceName:           sourceName,
-		showChatHistory:      showChatHistory,
-		showThinking:         showThinking,
-		thinkingJSONL:        thinkingJSONL,
-		verbose:              verbose,
-		replaceSourceID:      replaceSourceID,
-		force:                force,
-		dryRun:               dryRun,
-		maxBytes:             maxBytes,
-		jsonOutput:           jsonOutput,
-		packChunk:            packChunk,
-		reportPrompt:         reportPrompt,
-		reportInstructions:   reportInstructions,
-		reportSections:       reportSections,
-		conversationID:       conversationID,
-		useWebChat:           useWebChat,
-		citationMode:         citationMode,
-		resolveCitationsFlag: resolveCitationsFlag,
-		sourceIDsFlag:        sourceIDsFlag,
-		sourceMatchFlag:      sourceMatchFlag,
-		sourceExcludeFlag:    sourceExcludeFlag,
-		labelIDsFlag:         labelIDsFlag,
-		labelMatchFlag:       labelMatchFlag,
-		labelExcludeFlag:     labelExcludeFlag,
-		promptFile:           promptFile,
-		researchMode:         researchMode,
-		researchMD:           researchMD,
-		researchPollMs:       researchPollMs,
-		researchImport:       researchImport,
+		showVersion:       showVersion,
+		experimental:      experimental,
+		authToken:         authToken,
+		cookies:           cookies,
+		authUser:          authUser,
+		debug:             debug,
+		debugDumpPayload:  debugDumpPayload,
+		debugParsing:      debugParsing,
+		debugFieldMapping: debugFieldMapping,
+		chromeProfile:     chromeProfile,
+		chunkedResponse:   chunkedResponse,
+		useDirectRPC:      useDirectRPC,
+		skipSources:       skipSources,
+		yes:               yes,
+		jsonOutput:        jsonOutput,
 	}
 }
 
@@ -434,38 +422,9 @@ func applyGlobalOptions(opts globalOptions) {
 	debugParsing = opts.debugParsing
 	debugFieldMapping = opts.debugFieldMapping
 	chromeProfile = opts.chromeProfile
-	mimeType = opts.mimeType
 	chunkedResponse = opts.chunkedResponse
 	useDirectRPC = opts.useDirectRPC
 	skipSources = opts.skipSources
 	yes = opts.yes
-	sourceName = opts.sourceName
-	showChatHistory = opts.showChatHistory
-	showThinking = opts.showThinking
-	thinkingJSONL = opts.thinkingJSONL
-	verbose = opts.verbose
-	replaceSourceID = opts.replaceSourceID
-	force = opts.force
-	dryRun = opts.dryRun
-	maxBytes = opts.maxBytes
 	jsonOutput = opts.jsonOutput
-	packChunk = opts.packChunk
-	reportPrompt = opts.reportPrompt
-	reportInstructions = opts.reportInstructions
-	reportSections = opts.reportSections
-	conversationID = opts.conversationID
-	useWebChat = opts.useWebChat
-	citationMode = opts.citationMode
-	resolveCitationsFlag = opts.resolveCitationsFlag
-	sourceIDsFlag = opts.sourceIDsFlag
-	sourceMatchFlag = opts.sourceMatchFlag
-	sourceExcludeFlag = opts.sourceExcludeFlag
-	labelIDsFlag = opts.labelIDsFlag
-	labelMatchFlag = opts.labelMatchFlag
-	labelExcludeFlag = opts.labelExcludeFlag
-	promptFile = opts.promptFile
-	researchMode = opts.researchMode
-	researchMD = opts.researchMD
-	researchPollMs = opts.researchPollMs
-	researchImport = opts.researchImport
 }

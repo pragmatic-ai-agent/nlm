@@ -129,8 +129,7 @@ func TestRunResearchModeValidation(t *testing.T) {
 }
 
 func TestParseResearchArgs(t *testing.T) {
-	researchMode, researchMD, researchPollMs, researchImport = "", false, 0, false
-	got, gotPos, err := parseResearchArgs([]string{"nb", "--mode", "fast", "--md", "--poll-ms", "1500", "--import", "query", "terms"})
+	got, gotPos, err := parseResearchArgsWithOptions([]string{"nb", "--mode", "fast", "--md", "--poll-ms", "1500", "--import", "query", "terms"}, globalOptions{})
 	if err != nil {
 		t.Fatalf("parseResearchArgs error = %v", err)
 	}

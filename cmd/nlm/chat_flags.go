@@ -40,6 +40,10 @@ type reportOptions struct {
 	Render       chatRenderOptions
 }
 
+type createReportOptions struct {
+	Selectors selectorOptions
+}
+
 func currentChatRenderOptions() chatRenderOptions {
 	return chatRenderOptionsFromGlobals(packageGlobalOptions())
 }
@@ -303,7 +307,6 @@ func printChatShowUsage(cmdName string) {
 	fmt.Fprintln(os.Stderr, "Flags:")
 	fmt.Fprintln(os.Stderr, "  --thinking, --reasoning  Show persisted thinking traces on stderr")
 	fmt.Fprintln(os.Stderr, "  --citations <mode>       Citation rendering: off|block|stream|tail|overlay|json")
-	fmt.Fprintln(os.Stderr, "  --resolve-citations      Resolve citations to file:line for txtar-archive sources")
 }
 
 func validateChatShowArgs(cmdName string, args []string) error {
@@ -330,14 +333,17 @@ func parseChatShowArgsWithOptions(args []string, globals globalOptions) (chatRen
 	flags.BoolVar(&opts.ShowThinking, "thinking", opts.ShowThinking, "")
 	flags.BoolVar(&opts.ShowThinking, "reasoning", opts.ShowThinking, "")
 	flags.StringVar(&opts.CitationMode, "citations", opts.CitationMode, "")
+	flags.BoolVar(&opts.ResolveCitations, "resolve-citations", opts.ResolveCitations, "")
 
 	flagArgs, positional, err := splitCommandFlags(args, map[string]bool{
-		"thinking":  true,
-		"reasoning": true,
-		"citations": true,
+		"thinking":          true,
+		"reasoning":         true,
+		"citations":         true,
+		"resolve-citations": true,
 	}, map[string]bool{
-		"thinking":  true,
-		"reasoning": true,
+		"thinking":          true,
+		"reasoning":         true,
+		"resolve-citations": true,
 	})
 	if err != nil {
 		return opts, nil, err
@@ -361,6 +367,54 @@ func runChatShowWithOptions(args []string, globals globalOptions) error {
 		return err
 	}
 	return chatShow(positional[0], positional[1], opts)
+}
+
+func validateCreateReportArgs(cmdName string, args []string) error {
+	return validateCreateReportArgsWithOptions(cmdName, args, packageGlobalOptions())
+}
+
+func validateCreateReportArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, positional, err := parseCreateReportArgsWithOptions(args, globals)
+	if err == nil && len(positional) >= 2 {
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "usage: nlm %s <notebook-id> <report-type> [description] [instructions]\n", cmdName)
+	return errBadArgs
+}
+
+func parseCreateReportArgs(args []string) (createReportOptions, []string, error) {
+	return parseCreateReportArgsWithOptions(args, packageGlobalOptions())
+}
+
+func parseCreateReportArgsWithOptions(args []string, globals globalOptions) (createReportOptions, []string, error) {
+	opts := createReportOptions{Selectors: selectorOptionsFromGlobals(globals)}
+	flags := flag.NewFlagSet("create-report", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	appendSelectorFlags(flags, &opts.Selectors)
+
+	flagArgs, positional, err := splitCommandFlags(args, selectorCommandLocalFlags(), nil)
+	if err != nil {
+		return opts, nil, err
+	}
+	if err := flags.Parse(flagArgs); err != nil {
+		return opts, nil, err
+	}
+	if len(positional) < 2 {
+		return opts, nil, fmt.Errorf("want notebook id and report type")
+	}
+	return opts, positional, nil
+}
+
+func runCreateReport(c *api.Client, args []string) error {
+	return runCreateReportWithOptions(c, args, packageGlobalOptions())
+}
+
+func runCreateReportWithOptions(c *api.Client, args []string, globals globalOptions) error {
+	opts, positional, err := parseCreateReportArgsWithOptions(args, globals)
+	if err != nil {
+		return err
+	}
+	return createReport(c, positional[0], positional[1], positional[2:], opts)
 }
 
 func printGenerateReportUsage(cmdName string) {

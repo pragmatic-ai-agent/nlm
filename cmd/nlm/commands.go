@@ -672,15 +672,12 @@ var commands = []command{
 		name: "update-artifact", argsUsage: "<artifact-id> [new-title]",
 		usage: "Rename artifact (new title from positional arg or --name)", section: "Artifact",
 		minArgs: 1, maxArgs: 2,
+		validateWithOptions: validateUpdateArtifactArgsWithOptions,
 		run: func(c *api.Client, args []string) error {
-			title := sourceName // reuse --name flag
-			if len(args) > 1 {
-				title = args[1]
-			}
-			if title == "" {
-				return fmt.Errorf("provide new title as second arg or --name flag")
-			}
-			return renameArtifact(c, args[0], title)
+			return runUpdateArtifactWithOptions(c, args, packageGlobalOptions())
+		},
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runUpdateArtifactWithOptions(c, args, opts)
 		},
 	},
 	{
@@ -940,8 +937,11 @@ var commands = []command{
 		name: "create-report", argsUsage: "<notebook-id> <report-type> [description] [instructions]",
 		usage: "Create a report artifact (run report-suggestions for valid types)", section: "Create",
 		minArgs: 2, maxArgs: -1,
-		run: func(c *api.Client, args []string) error {
-			return createReport(c, args[0], args[1], args[2:])
+		validate:            validateCreateReportArgs,
+		validateWithOptions: validateCreateReportArgsWithOptions,
+		run:                 func(c *api.Client, args []string) error { return runCreateReport(c, args) },
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runCreateReportWithOptions(c, args, opts)
 		},
 	},
 	{

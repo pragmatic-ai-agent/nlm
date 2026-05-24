@@ -10,14 +10,6 @@ import (
 	"github.com/tmc/nlm/internal/notebooklm/api"
 )
 
-// Research flags (set in init() via flag.StringVar).
-var (
-	researchMode   string // "fast" or "deep"; default "deep"
-	researchMD     bool   // emit markdown report on stdout instead of JSONL events
-	researchPollMs int    // override polling interval for deep research; 0 = default 5s
-	researchImport bool   // after research completes, import the discovered sources into the notebook
-)
-
 // researchEvent is one JSON-lines record emitted on stdout.
 //
 // Wire shape is stable across fast and deep modes so downstream scripts can

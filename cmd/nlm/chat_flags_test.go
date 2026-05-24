@@ -35,8 +35,7 @@ func TestParseSourceSelectionArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sourceIDsFlag, sourceMatchFlag = "", ""
-			got, gotPos, err := parseSourceSelectionArgs(tt.args)
+			got, gotPos, err := parseSourceSelectionArgsWithOptions(tt.args, globalOptions{})
 			if tt.wantErr != "" {
 				if err == nil || err.Error() != tt.wantErr {
 					t.Fatalf("parseSourceSelectionArgs(%q) error = %v, want %q", tt.args, err, tt.wantErr)
@@ -62,18 +61,14 @@ func TestParseSourceSelectionArgs(t *testing.T) {
 }
 
 func TestParseGenerateChatArgs(t *testing.T) {
-	showThinking, thinkingJSONL, verbose, citationMode = false, false, false, ""
-	conversationID, useWebChat = "", false
-	sourceIDsFlag, sourceMatchFlag = "", ""
-
-	got, gotPos, err := parseGenerateChatArgs([]string{
+	got, gotPos, err := parseGenerateChatArgsWithOptions([]string{
 		"nb",
 		"why",
 		"--conversation", "conv-1",
 		"--thinking",
 		"--source-match", "^spec/",
 		"now",
-	})
+	}, globalOptions{})
 	if err != nil {
 		t.Fatalf("parseGenerateChatArgs error = %v", err)
 	}
@@ -92,17 +87,13 @@ func TestParseGenerateChatArgs(t *testing.T) {
 }
 
 func TestParseChatArgs(t *testing.T) {
-	promptFile, citationMode = "", ""
-	showChatHistory, showThinking, thinkingJSONL, verbose = false, false, false, false
-	sourceIDsFlag, sourceMatchFlag = "", ""
-
-	got, gotPos, err := parseChatArgs([]string{
+	got, gotPos, err := parseChatArgsWithOptions([]string{
 		"nb",
 		"--prompt-file", "prompt.txt",
 		"--history",
 		"--citations", "tail",
 		"--source-ids", "a,b",
-	})
+	}, globalOptions{})
 	if err != nil {
 		t.Fatalf("parseChatArgs error = %v", err)
 	}
@@ -115,17 +106,12 @@ func TestParseChatArgs(t *testing.T) {
 }
 
 func TestParseGenerateReportArgs(t *testing.T) {
-	reportPrompt, reportInstructions, citationMode = "", "", ""
-	reportSections = 0
-	showThinking, thinkingJSONL, verbose = false, false, false
-	sourceIDsFlag, sourceMatchFlag = "", ""
-
-	got, gotPos, err := parseGenerateReportArgs([]string{
+	got, gotPos, err := parseGenerateReportArgsWithOptions([]string{
 		"nb",
 		"--sections", "3",
 		"--prompt", "# {topic}",
 		"--source-match", "^guide/",
-	})
+	}, globalOptions{})
 	if err != nil {
 		t.Fatalf("parseGenerateReportArgs error = %v", err)
 	}
@@ -134,6 +120,49 @@ func TestParseGenerateReportArgs(t *testing.T) {
 	}
 	if len(gotPos) != 1 || gotPos[0] != "nb" {
 		t.Fatalf("parseGenerateReportArgs positional = %q, want [nb]", gotPos)
+	}
+}
+
+func TestParseCreateReportArgsUsesGlobalSelectors(t *testing.T) {
+	inv, err := parseInvocation([]string{"--source-match", "^spec/", "create-report", "nb", "brief"}, nil, nil, os.Stderr)
+	if err != nil {
+		t.Fatalf("parseInvocation: %v", err)
+	}
+	got, gotPos, err := parseCreateReportArgsWithOptions(inv.args, inv.globals)
+	if err != nil {
+		t.Fatalf("parseCreateReportArgs: %v", err)
+	}
+	if got.Selectors.SourceMatch != "^spec/" {
+		t.Fatalf("create-report selectors = %+v, want source-match from globals", got.Selectors)
+	}
+	if strings.Join(gotPos, ",") != "nb,brief" {
+		t.Fatalf("create-report positional = %q, want [nb brief]", gotPos)
+	}
+}
+
+func TestParseCreateReportArgsLocalSelectors(t *testing.T) {
+	got, gotPos, err := parseCreateReportArgsWithOptions([]string{"nb", "brief", "--source-ids", "src-1,src-2", "desc"}, globalOptions{})
+	if err != nil {
+		t.Fatalf("parseCreateReportArgs: %v", err)
+	}
+	if got.Selectors.SourceIDs != "src-1,src-2" {
+		t.Fatalf("create-report selectors = %+v, want source ids", got.Selectors)
+	}
+	if strings.Join(gotPos, ",") != "nb,brief,desc" {
+		t.Fatalf("create-report positional = %q, want [nb brief desc]", gotPos)
+	}
+}
+
+func TestParseChatShowArgsResolveCitationsCompatibility(t *testing.T) {
+	got, gotPos, err := parseChatShowArgsWithOptions([]string{"nb", "conv", "--resolve-citations"}, globalOptions{})
+	if err != nil {
+		t.Fatalf("parseChatShowArgs: %v", err)
+	}
+	if !got.ResolveCitations {
+		t.Fatalf("chat show resolve citations = false, want true")
+	}
+	if strings.Join(gotPos, ",") != "nb,conv" {
+		t.Fatalf("chat show positional = %q, want [nb conv]", gotPos)
 	}
 }
 

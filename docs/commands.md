@@ -41,6 +41,7 @@ Run `nlm <command> -h` for exact per-command usage.
 | `nlm notebook cover NOTEBOOK_ID PRESET_ID` | Pick a built-in cover image by preset ID |
 | `nlm notebook cover-image NOTEBOOK_ID ./image.png` | Upload a custom cover image |
 | `nlm notebook unrecent NOTEBOOK_ID` | Remove from the recently-viewed list (does not delete) |
+| `nlm analytics NOTEBOOK_ID` | Show notebook analytics time series |
 
 `notebook list` shows the first 10 notebooks on a TTY by default. When stdout
 is piped, it emits the full list unless you pass `--limit`.
@@ -62,6 +63,7 @@ is piped, it emits the full list unless you pass `--limit`.
 | `nlm source refresh NOTEBOOK_ID SOURCE_ID` | Refresh source content |
 | `nlm source check SOURCE_ID [NOTEBOOK_ID]` | Check source freshness |
 | `nlm source read SOURCE_ID [NOTEBOOK_ID]` | Print the indexed text body |
+| `nlm discover-sources NOTEBOOK_ID "Query"` | Discover relevant source suggestions |
 
 `source add` accepts URLs, file paths, literal text, or a sole `-`. A sole `-`
 uploads stdin as one source; use `--name` to give piped text a useful title. To
@@ -124,6 +126,7 @@ labels yourself.
 | `nlm audio list NOTEBOOK_ID` | List audio overviews |
 | `nlm audio get NOTEBOOK_ID` | Get audio overview details |
 | `nlm --direct-rpc audio download NOTEBOOK_ID [FILE]` | Download the audio file, or print the browser URL when direct download is unavailable |
+| `nlm audio download NOTEBOOK_ID [FILE]` | Download the audio file, or print the browser URL when direct download is unavailable |
 | `nlm audio delete NOTEBOOK_ID` | Delete an audio overview |
 | `nlm audio share NOTEBOOK_ID` | Share an audio overview |
 | `nlm video list NOTEBOOK_ID` | List video overviews |
@@ -145,6 +148,7 @@ labels yourself.
 | `nlm artifact get ARTIFACT_ID` | Show artifact details |
 | `nlm artifact update ARTIFACT_ID [NEW_TITLE]` | Rename an artifact |
 | `nlm artifact delete ARTIFACT_ID` | Delete an artifact |
+| `nlm artifact revise ARTIFACT_ID "Instructions"` | Re-run an artifact generator with revision instructions |
 
 `artifact update` also accepts `--name` instead of a positional title.
 
@@ -165,6 +169,7 @@ labels yourself.
 | Command | Description |
 |---------|-------------|
 | `nlm generate-guide NOTEBOOK_ID` | Generate a notebook guide |
+| `nlm magic NOTEBOOK_ID [SOURCE_ID...]` | Generate the notebook Magic View |
 | `nlm source-guide NOTEBOOK_ID SOURCE_ID...` | Show source summaries and keyword chips |
 | `nlm generate-chat NOTEBOOK_ID "Prompt"` | Stream a one-shot chat answer |
 | `nlm audio-suggestions NOTEBOOK_ID` | Suggest audio-overview prompts |
@@ -201,20 +206,20 @@ If you omit source IDs, pass `--source-ids` or `--source-match`.
 
 | Command | Description |
 |---------|-------------|
-| `summarize` | Summarize content from sources |
-| `rephrase` | Rephrase content from sources |
-| `expand` | Expand on content from sources |
-| `critique` | Critique source content |
-| `brainstorm` | Brainstorm from source material |
-| `verify` | Verify facts in sources |
-| `explain` | Explain concepts from sources |
-| `outline` | Create an outline from sources |
-| `study-guide` | Generate a study guide |
-| `faq` | Generate a FAQ |
-| `briefing-doc` | Create a briefing document |
-| `mindmap` | Generate an interactive mindmap |
-| `timeline` | Create a timeline |
-| `toc` | Generate a table of contents |
+| `nlm summarize NOTEBOOK_ID [SOURCE_ID...]` | Summarize content from sources |
+| `nlm rephrase NOTEBOOK_ID [SOURCE_ID...]` | Rephrase content from sources |
+| `nlm expand NOTEBOOK_ID [SOURCE_ID...]` | Expand on content from sources |
+| `nlm critique NOTEBOOK_ID [SOURCE_ID...]` | Critique source content |
+| `nlm brainstorm NOTEBOOK_ID [SOURCE_ID...]` | Brainstorm from source material |
+| `nlm verify NOTEBOOK_ID [SOURCE_ID...]` | Verify facts in sources |
+| `nlm explain NOTEBOOK_ID [SOURCE_ID...]` | Explain concepts from sources |
+| `nlm outline NOTEBOOK_ID [SOURCE_ID...]` | Create an outline from sources |
+| `nlm study-guide NOTEBOOK_ID [SOURCE_ID...]` | Generate a study guide |
+| `nlm faq NOTEBOOK_ID [SOURCE_ID...]` | Generate a FAQ |
+| `nlm briefing-doc NOTEBOOK_ID [SOURCE_ID...]` | Create a briefing document |
+| `nlm mindmap NOTEBOOK_ID SOURCE_ID [SOURCE_ID...]` | Generate an interactive mindmap |
+| `nlm timeline NOTEBOOK_ID [SOURCE_ID...]` | Create a timeline |
+| `nlm toc NOTEBOOK_ID [SOURCE_ID...]` | Generate a table of contents |
 
 ## Research
 
@@ -241,4 +246,5 @@ If you omit source IDs, pass `--source-ids` or `--source-match`.
 | `nlm auth --print-env` | Print shell export lines for the current session |
 | `nlm refresh` | Refresh stored credentials |
 | `nlm feedback "Message"` | Submit feedback to NotebookLM |
+| `nlm account` | Show or update authenticated account settings |
 | `nlm mcp` | Run the MCP server on stdin/stdout |

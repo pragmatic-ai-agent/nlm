@@ -201,6 +201,15 @@ func TestCLISurface(t *testing.T) {
 		if inv.name != "auth" || inv.globals.debug || !reflect.DeepEqual(inv.args, wantArgs) {
 			t.Fatalf("name, global debug, args = %q, %v, %v; want auth false %v", inv.name, inv.globals.debug, inv.args, wantArgs)
 		}
+
+		inv, _, err = parse(t, "artifact", "update", "art-1", "--name", "New")
+		if err != nil {
+			t.Fatalf("parseInvocation: %v", err)
+		}
+		wantArgs = []string{"art-1", "--name", "New"}
+		if inv.name != "artifact update" || inv.globals.sourceName != "" || !reflect.DeepEqual(inv.args, wantArgs) {
+			t.Fatalf("name, global name, args = %q, %q, %v; want artifact update empty %v", inv.name, inv.globals.sourceName, inv.args, wantArgs)
+		}
 	})
 
 	t.Run("legacy command resolves", func(t *testing.T) {

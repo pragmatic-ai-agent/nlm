@@ -67,8 +67,7 @@ func TestParseSourceAddArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sourceName, mimeType, replaceSourceID = "", "", ""
-			gotOpts, gotNotebook, gotInputs, err := parseSourceAddArgs(tt.args)
+			gotOpts, gotNotebook, gotInputs, err := parseSourceAddArgsWithOptions(tt.args, globalOptions{})
 			if tt.wantErr != "" {
 				if err == nil || err.Error() != tt.wantErr {
 					t.Fatalf("parseSourceAddArgs(%q) error = %v, want %q", tt.args, err, tt.wantErr)
@@ -130,8 +129,7 @@ func TestParseSourceSyncArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sourceName, force, dryRun, maxBytes, jsonOutput = "", false, false, 0, false
-			gotOpts, gotPos, err := parseSourceSyncArgs(tt.args)
+			gotOpts, gotPos, err := parseSourceSyncArgsWithOptions(tt.args, globalOptions{})
 			if tt.wantErrText != "" {
 				if err == nil || err.Error() != tt.wantErrText {
 					t.Fatalf("parseSourceSyncArgs(%q) error = %v, want %q", tt.args, err, tt.wantErrText)
@@ -157,8 +155,7 @@ func TestParseSourceSyncArgs(t *testing.T) {
 }
 
 func TestParseSourcePackArgs(t *testing.T) {
-	sourceName, maxBytes, packChunk = "", 0, 0
-	gotOpts, gotPaths, err := parseSourcePackArgs([]string{"./docs", "--chunk", "2", "--name", "bundle"})
+	gotOpts, gotPaths, err := parseSourcePackArgsWithOptions([]string{"./docs", "--chunk", "2", "--name", "bundle"}, globalOptions{})
 	if err != nil {
 		t.Fatalf("parseSourcePackArgs() error = %v", err)
 	}

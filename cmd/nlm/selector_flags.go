@@ -120,5 +120,5 @@ func runSourceGuideWithOptions(c *api.Client, args []string, globals globalOptio
 			return err
 		}
 	}
-	return generateSourceGuides(c, sourceIDs)
+	return generateSourceGuidesWithOptions(c, sourceIDs, globals)
 }

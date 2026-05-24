@@ -32,46 +32,21 @@ import (
 
 // Global flags
 var (
-	showVersion          bool
-	experimental         bool // surface experimental commands in help + allow them to run
-	authToken            string
-	cookies              string
-	authUser             string
-	debug                bool
-	debugDumpPayload     bool
-	debugParsing         bool
-	debugFieldMapping    bool
-	chromeProfile        string
-	mimeType             string
-	chunkedResponse      bool   // Control rt=c parameter for chunked vs JSON array response
-	useDirectRPC         bool   // Use direct RPC calls instead of orchestration service
-	skipSources          bool   // Skip fetching sources for chat (useful when project is inaccessible)
-	yes                  bool   // Skip confirmation prompts
-	sourceName           string // Custom name for added sources
-	showChatHistory      bool   // Show previous chat conversation on start
-	showThinking         bool   // Show thinking headers while streaming responses
-	thinkingJSONL        bool   // Emit chat events (thinking/answer/citation/followup) as JSON-lines on stdout
-	verbose              bool   // Show full thinking traces while streaming responses
-	replaceSourceID      string // Source ID to replace when adding
-	force                bool   // Force re-upload even if unchanged
-	dryRun               bool   // Show what would change without uploading
-	maxBytes             int    // Chunk threshold for sync
-	jsonOutput           bool   // NDJSON output for sync
-	packChunk            int    // 1-indexed chunk to emit (sync-pack); 0 = auto (single chunk) or list
-	reportPrompt         string // Per-section prompt template for generate-report ({topic} replaced)
-	reportInstructions   string // Notebook instructions to set before generate-report
-	reportSections       int    // Max sections for generate-report (0 = all)
-	conversationID       string // Conversation ID to continue (generate-chat)
-	useWebChat           bool   // Use most recent server-side conversation (generate-chat)
-	citationMode         string // Citation rendering mode: off|block|overlay (default block-on-TTY)
-	resolveCitationsFlag bool   // When true, resolve txtar-aware "file:line" coordinates for each citation
-	sourceIDsFlag        string // Comma-separated list, or "-" to read newline-delimited IDs from stdin
-	sourceMatchFlag      string // Regex matched against source titles and UUIDs; unioned with --source-ids
-	sourceExcludeFlag    string // Regex matched against source titles and UUIDs; subtracted from the include set
-	labelIDsFlag         string // Comma-separated label IDs; their member sources are added to the include set
-	labelMatchFlag       string // Regex matched against label names; member sources of matching labels are included
-	labelExcludeFlag     string // Regex matched against label names; member sources of matching labels are subtracted
-	promptFile           string // Read prompt from file (nlm chat). "-" reads from stdin.
+	showVersion       bool
+	experimental      bool // surface experimental commands in help + allow them to run
+	authToken         string
+	cookies           string
+	authUser          string
+	debug             bool
+	debugDumpPayload  bool
+	debugParsing      bool
+	debugFieldMapping bool
+	chromeProfile     string
+	chunkedResponse   bool // Control rt=c parameter for chunked vs JSON array response
+	useDirectRPC      bool // Use direct RPC calls instead of orchestration service
+	skipSources       bool // Skip fetching sources for chat (useful when project is inaccessible)
+	yes               bool // Skip confirmation prompts
+	jsonOutput        bool // NDJSON output for sync
 )
 
 // ChatSession represents a persistent chat conversation
@@ -1289,10 +1264,14 @@ func saveCachedSourceGuide(sourceID string, g *api.SourceGuide) error {
 }
 
 func generateSourceGuides(c *api.Client, sourceIDs []string) error {
+	return generateSourceGuidesWithOptions(c, sourceIDs, packageGlobalOptions())
+}
+
+func generateSourceGuidesWithOptions(c *api.Client, sourceIDs []string, globals globalOptions) error {
 	enc := json.NewEncoder(os.Stdout)
 	for i, sourceID := range sourceIDs {
 		var guide *api.SourceGuide
-		if !force {
+		if !globals.force {
 			cached, err := loadCachedSourceGuide(sourceID)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "cache read %s: %v\n", sourceID, err)
@@ -1310,7 +1289,7 @@ func generateSourceGuides(c *api.Client, sourceIDs []string) error {
 				fmt.Fprintf(os.Stderr, "cache write %s: %v\n", sourceID, err)
 			}
 		}
-		if jsonOutput {
+		if globals.jsonOutput {
 			type envelope struct {
 				SourceID  string   `json:"source_id"`
 				Summary   string   `json:"summary"`
@@ -2717,7 +2696,7 @@ func audioSuggestions(c *api.Client, notebookID string) error {
 	return nil
 }
 
-func createReport(c *api.Client, notebookID, reportType string, extra []string) error {
+func createReport(c *api.Client, notebookID, reportType string, extra []string, opts createReportOptions) error {
 	description := ""
 	instructions := ""
 	if len(extra) > 0 {
@@ -2727,7 +2706,7 @@ func createReport(c *api.Client, notebookID, reportType string, extra []string) 
 		instructions = strings.Join(extra[1:], " ")
 	}
 
-	flagIDs, err := resolveSourceSelectors(c, notebookID)
+	flagIDs, err := resolveSourceSelectorsWithOptions(c, notebookID, opts.Selectors)
 	if err != nil {
 		return err
 	}
