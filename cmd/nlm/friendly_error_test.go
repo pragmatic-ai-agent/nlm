@@ -57,6 +57,22 @@ func TestFriendlyError(t *testing.T) {
 			wantNotContain: []string{"API error 16", "error 16:"},
 		},
 		{
+			name: "notebook access error names notebook not auth",
+			err: fmt.Errorf("list sources: get project: %w", &api.NotebookAccessError{
+				NotebookID: "nb-missing",
+				Err: &batchexecute.APIError{
+					ErrorCode: &batchexecute.ErrorCode{
+						Code:        7,
+						Type:        batchexecute.ErrorTypePermissionDenied,
+						Message:     "Permission denied",
+						Description: "The caller does not have permission.",
+					},
+				},
+			}),
+			wantContains:   []string{"list sources", "nb-missing", "not found or not accessible"},
+			wantNotContain: []string{"nlm auth", "API error 7", "PermissionDenied"},
+		},
+		{
 			name: "source cap sentinel hides wrapper noise",
 			err: fmt.Errorf("add source from URL: %w: %w",
 				api.ErrSourceCapReached,

@@ -55,8 +55,8 @@ func exitCodeName(code int) string {
 // exitCodeFor maps a run() error to an exit code per the taxonomy above.
 // Order of checks matters: the typed api sentinels are more specific than
 // the batchexecute.APIError classification, and isAuthenticationError runs
-// first because it folds in legacy string-matching cases that predate the
-// structured ErrorType classification.
+// after the structured checks because it folds in legacy string-matching
+// cases that predate the structured ErrorType classification.
 func exitCodeFor(err error) int {
 	if err == nil {
 		return exitSuccess
@@ -69,10 +69,6 @@ func exitCodeFor(err error) int {
 		return exitBadArgs
 	}
 
-	if isAuthenticationError(err) {
-		return exitAuth
-	}
-
 	// Typed api-layer sentinels for states batchexecute cannot disambiguate.
 	switch {
 	case errors.Is(err, api.ErrSourceCapReached),
@@ -82,6 +78,8 @@ func exitCodeFor(err error) int {
 	case errors.Is(err, api.ErrArtifactGenerating),
 		errors.Is(err, api.ErrResearchPolling):
 		return exitBusy
+	case errors.Is(err, api.ErrNotebookNotAccessible):
+		return exitNotFound
 	}
 
 	// Structured batchexecute.APIError classification.
@@ -89,10 +87,11 @@ func exitCodeFor(err error) int {
 	if errors.As(err, &apiErr) {
 		if apiErr.ErrorCode != nil {
 			switch apiErr.ErrorCode.Type {
-			case batchexecute.ErrorTypeAuthentication,
-				batchexecute.ErrorTypeAuthorization,
-				batchexecute.ErrorTypePermissionDenied:
+			case batchexecute.ErrorTypeAuthentication:
 				return exitAuth
+			case batchexecute.ErrorTypeAuthorization,
+				batchexecute.ErrorTypePermissionDenied:
+				return exitNotFound
 			case batchexecute.ErrorTypeNotFound:
 				return exitNotFound
 			case batchexecute.ErrorTypeResourceExhausted,
@@ -112,8 +111,10 @@ func exitCodeFor(err error) int {
 		}
 		// HTTPStatus fallback for APIErrors without a parsed ErrorCode.
 		switch {
-		case apiErr.HTTPStatus == 401, apiErr.HTTPStatus == 403:
+		case apiErr.HTTPStatus == 401:
 			return exitAuth
+		case apiErr.HTTPStatus == 403:
+			return exitNotFound
 		case apiErr.HTTPStatus == 404:
 			return exitNotFound
 		case apiErr.HTTPStatus == 429:
@@ -123,6 +124,10 @@ func exitCodeFor(err error) int {
 		case apiErr.HTTPStatus >= 400 && apiErr.HTTPStatus <= 499:
 			return exitBadArgs
 		}
+	}
+
+	if isAuthenticationError(err) {
+		return exitAuth
 	}
 
 	return exitGeneric

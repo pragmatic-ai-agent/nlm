@@ -246,11 +246,9 @@ func TestParseCitationsV2SlotOrdering(t *testing.T) {
 }
 
 // TestParseCitationsV2SkipsUnresolvableSrcIdx exercises the case where
-// the server emits a srcIdx past the end of the request's source list —
-// observed when --source-ids narrows to a subset and the server still
-// references the original full set. A Citation we can't resolve to a
-// SourceID is unusable downstream, so the parser drops it rather than
-// emitting a blank footer line.
+// the server emits a srcIdx past the end of the request's source list.
+// A Citation we can't resolve to a SourceID is unusable downstream, so
+// the parser drops it rather than emitting a blank footer line.
 func TestParseCitationsV2SkipsUnresolvableSrcIdx(t *testing.T) {
 	sourceIDs := []string{"src_a"} // request narrowed to one source
 	mappingData := []interface{}{
@@ -287,5 +285,33 @@ func TestParseCitationsV2SkipsUnresolvableSrcIdx(t *testing.T) {
 		if c.SourceID == "" {
 			t.Errorf("citation with empty SourceID leaked through: %+v", c)
 		}
+	}
+}
+
+func TestExtractChatPayloadResolvesScopedCitationIDs(t *testing.T) {
+	sourceIDs := []string{"target-src"}
+	payload := []interface{}{
+		[]interface{}{"answer", nil, nil, nil, nil, nil, nil, nil, float64(1)},
+		[]interface{}{
+			[]interface{}{nil, nil, float64(0.9), nil, nil},
+		},
+		[]interface{}{
+			[]interface{}{
+				[]interface{}{nil, float64(0), float64(6)},
+				[]interface{}{float64(0)},
+			},
+		},
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	got := extractChatPayload(string(payloadJSON), sourceIDs)
+	if len(got.Citations) != 1 {
+		t.Fatalf("got %d citations, want 1: %+v", len(got.Citations), got.Citations)
+	}
+	if got.Citations[0].SourceID != "target-src" {
+		t.Fatalf("citation source = %q, want target-src", got.Citations[0].SourceID)
 	}
 }

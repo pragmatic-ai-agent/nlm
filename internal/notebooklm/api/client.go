@@ -271,6 +271,26 @@ func isLikelyQuotaError(err error) bool {
 	return false
 }
 
+func classifyGetProjectError(projectID string, err error) error {
+	var apiErr *batchexecute.APIError
+	if !errors.As(err, &apiErr) {
+		return err
+	}
+	if apiErr.ErrorCode != nil {
+		switch apiErr.ErrorCode.Type {
+		case batchexecute.ErrorTypeAuthorization,
+			batchexecute.ErrorTypePermissionDenied,
+			batchexecute.ErrorTypeNotFound:
+			return &NotebookAccessError{NotebookID: projectID, Err: err}
+		}
+	}
+	switch apiErr.HTTPStatus {
+	case http.StatusForbidden, http.StatusNotFound:
+		return &NotebookAccessError{NotebookID: projectID, Err: err}
+	}
+	return err
+}
+
 func (c *Client) GetProject(projectID string) (*Notebook, error) {
 	req := &pb.GetProjectRequest{
 		ProjectId: projectID,
@@ -279,7 +299,7 @@ func (c *Client) GetProject(projectID string) (*Notebook, error) {
 	ctx := context.Background()
 	project, err := c.orchestrationService.GetProject(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("get project: %w", err)
+		return nil, fmt.Errorf("get project: %w", classifyGetProjectError(projectID, err))
 	}
 
 	if c.config.Debug && project.Sources != nil {
@@ -3833,6 +3853,9 @@ func (c *Client) doChatStreamed(req ChatRequest, callback func(chunk string) boo
 
 // doChatStreamedChunked sends a chat request and streams phase-aware ChatChunks via callback.
 func (c *Client) doChatStreamedChunked(req ChatRequest, callback func(ChatChunk) bool) error {
+	sourceIDs := c.resolveSourceIDs(req.ProjectID, req.SourceIDs)
+	req.SourceIDs = sourceIDs
+
 	body, err := c.buildChatRequestBody(req)
 	if err != nil {
 		return err
@@ -3868,13 +3891,6 @@ func (c *Client) doChatStreamedChunked(req ChatRequest, callback func(ChatChunk)
 	idleBody := newIdleTimeoutReader(resp.Body, 120*time.Second)
 	defer idleBody.Close()
 
-	// Citation srcIdx values index into the project's full source list,
-	// not the (possibly narrowed) set we sent in req.SourceIDs. Always
-	// expand to the full project sources so we can resolve every slot
-	// the model emits — without this, a chat using --source-ids would
-	// drop any citation referencing a project source outside that
-	// subset.
-	sourceIDs := c.resolveSourceIDs(req.ProjectID, nil)
 	return c.parseChatResponseChunked(idleBody, sourceIDs, callback)
 }
 
@@ -4267,7 +4283,7 @@ func debugDumpChatWirePositions(innerJSON string) {
 // citationData[0] / mappingData[0], regardless of which project source that
 // slot happens to reference. SourceIndex therefore carries the slot number
 // (1-based), and SourceID carries the resolved project source behind it.
-// sourceIDs is the source-id list from the original ChatRequest, used to
+// sourceIDs is the source-id list sent in the original ChatRequest, used to
 // turn per-slot srcIndices into stable identifiers.
 func parseCitationsV2(citationData, mappingData interface{}, sourceIDs []string) []Citation {
 	mapArr, _ := mappingData.([]interface{})
@@ -4321,10 +4337,8 @@ func parseCitationsV2(citationData, mappingData interface{}, sourceIDs []string)
 			if v, ok := idx.(float64); ok {
 				srcIdx = int(v)
 			}
-			// Skip srcIdx values we can't resolve to a project source.
-			// Observed when the request narrowed --source-ids and the
-			// server still returned a slot indexing past that subset:
-			// emitting a Citation with an empty SourceID would just
+			// Skip srcIdx values we can't resolve in the request's source
+			// list. Emitting a Citation with an empty SourceID would just
 			// render as a blank footer line nobody can act on.
 			if srcIdx < 0 || srcIdx >= len(sourceIDs) {
 				continue
@@ -4625,7 +4639,7 @@ func (c *Client) GetProjectWithContext(ctx context.Context, projectID string) (*
 
 	project, err := c.orchestrationService.GetProject(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("get project: %w", err)
+		return nil, fmt.Errorf("get project: %w", classifyGetProjectError(projectID, err))
 	}
 
 	if c.config.Debug && project.Sources != nil {

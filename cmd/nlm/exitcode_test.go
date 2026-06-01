@@ -67,8 +67,8 @@ func TestExitCodeFor(t *testing.T) {
 		// Structured batchexecute.APIError by ErrorType (exhaustive over
 		// every enumerant in internal/batchexecute/errors.go).
 		{"Authentication", apiErrorWithType(batchexecute.ErrorTypeAuthentication), exitAuth},
-		{"Authorization", apiErrorWithType(batchexecute.ErrorTypeAuthorization), exitAuth},
-		{"PermissionDenied", apiErrorWithType(batchexecute.ErrorTypePermissionDenied), exitAuth},
+		{"Authorization", apiErrorWithType(batchexecute.ErrorTypeAuthorization), exitNotFound},
+		{"PermissionDenied", apiErrorWithType(batchexecute.ErrorTypePermissionDenied), exitNotFound},
 		{"NotFound", apiErrorWithType(batchexecute.ErrorTypeNotFound), exitNotFound},
 		{"ResourceExhausted", apiErrorWithType(batchexecute.ErrorTypeResourceExhausted), exitPrecondition},
 		{"RateLimit", apiErrorWithType(batchexecute.ErrorTypeRateLimit), exitTransient},
@@ -83,7 +83,7 @@ func TestExitCodeFor(t *testing.T) {
 
 		// HTTPStatus fallback — APIError with no parsed ErrorCode.
 		{"HTTP 401", &batchexecute.APIError{HTTPStatus: 401}, exitAuth},
-		{"HTTP 403", &batchexecute.APIError{HTTPStatus: 403}, exitAuth},
+		{"HTTP 403", &batchexecute.APIError{HTTPStatus: 403}, exitNotFound},
 		{"HTTP 404", &batchexecute.APIError{HTTPStatus: 404}, exitNotFound},
 		{"HTTP 429", &batchexecute.APIError{HTTPStatus: 429}, exitTransient},
 		{"HTTP 400", &batchexecute.APIError{HTTPStatus: 400}, exitBadArgs},
