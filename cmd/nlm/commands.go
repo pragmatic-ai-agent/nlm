@@ -154,6 +154,7 @@ func groupedCommandsFromExisting(existing []command) []command {
 		cloneCommand(mustCommand(byName, "get-instructions"), "chat instructions get"),
 
 		cloneCommand(mustCommand(byName, "audio-list"), "audio list"),
+		cloneCommandInSection(mustCommand(byName, "create-audio"), "audio create", "Audio"),
 		cloneCommand(mustCommand(byName, "audio-get"), "audio get"),
 		cloneCommand(mustCommand(byName, "audio-download"), "audio download"),
 		cloneCommand(mustCommand(byName, "audio-rm"), "audio delete"),
@@ -166,6 +167,9 @@ func groupedCommandsFromExisting(existing []command) []command {
 
 		cloneCommandInSection(mustCommand(byName, "create-slides"), "deck create", "Deck"),
 		cloneCommand(mustCommand(byName, "deck-download"), "deck download"),
+
+		cloneCommand(mustCommand(byName, "app-create"), "app create"),
+		cloneCommand(mustCommand(byName, "mindmap-create"), "mindmap create"),
 	}
 }
 
@@ -531,14 +535,64 @@ var commands = []command{
 	{
 		name: "create-audio", argsUsage: "<notebook-id> <instructions>",
 		usage: "Create audio overview", section: "Create",
-		minArgs: 2, maxArgs: 2,
-		run: func(c *api.Client, args []string) error { return createAudioOverview(c, args[0], args[1]) },
+		minArgs: 2, maxArgs: -1,
+		validateWithOptions: validateAudioCreateArgsWithOptions,
+		help:                printAudioCreateUsage,
+		run: func(c *api.Client, args []string) error {
+			return createAudioOverview(c, args[0], strings.Join(args[1:], " "))
+		},
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			createOpts, positional, err := parseAudioCreateArgs(args)
+			if err != nil {
+				return err
+			}
+			return createAudioOverviewWithOptions(c, positional[0], strings.Join(positional[1:], " "), createOpts)
+		},
 	},
 	{
 		name: "create-video", argsUsage: "<notebook-id> <instructions>",
 		usage: "Create video overview", section: "Create",
-		minArgs: 2, maxArgs: 2,
-		run: func(c *api.Client, args []string) error { return createVideoOverview(c, args[0], args[1]) },
+		minArgs: 2, maxArgs: -1,
+		validateWithOptions: validateVideoCreateArgsWithOptions,
+		help:                printVideoCreateUsage,
+		run: func(c *api.Client, args []string) error {
+			return createVideoOverview(c, args[0], strings.Join(args[1:], " "))
+		},
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			createOpts, positional, err := parseVideoCreateArgs(args)
+			if err != nil {
+				return err
+			}
+			return createVideoOverviewWithOptions(c, positional[0], strings.Join(positional[1:], " "), createOpts)
+		},
+	},
+	{
+		name: "app-create", argsUsage: "--type <prototype|mindmap|canvas> <notebook-id> [instructions]",
+		usage: "Create a generated app artifact", section: "Create",
+		minArgs: 1, maxArgs: -1,
+		validateWithOptions: validateAppCreateArgsWithOptions,
+		help:                printAppCreateUsage,
+		run: func(c *api.Client, args []string) error {
+			return runAppCreateWithOptions(c, args, packageGlobalOptions())
+		},
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runAppCreateWithOptions(c, args, opts)
+		},
+	},
+	{
+		name: "mindmap-create", argsUsage: "<notebook-id> [instructions]",
+		usage: "Create a generated mind map artifact", section: "Create",
+		minArgs: 1, maxArgs: -1,
+		validateWithOptions: func(cmdName string, args []string, opts globalOptions) error {
+			return validateAppCreateArgsWithOptions(cmdName, append([]string{"--type", "mindmap"}, args...), opts)
+		},
+		help: printAppCreateUsage,
+		run: func(c *api.Client, args []string) error {
+			return runMindmapCreateWithOptions(c, args, packageGlobalOptions())
+		},
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runMindmapCreateWithOptions(c, args, opts)
+		},
 	},
 	{
 		name: "create-slides", argsUsage: "<notebook-id> <instructions>",

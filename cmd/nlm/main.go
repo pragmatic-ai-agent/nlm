@@ -1364,6 +1364,10 @@ func actOnSources(c *api.Client, notebookID string, action string, sourceIDs []s
 }
 
 func createAudioOverview(c *api.Client, projectID string, instructions string) error {
+	return createAudioOverviewWithOptions(c, projectID, instructions, audioCreateOptions{Length: "default", Language: "en"})
+}
+
+func createAudioOverviewWithOptions(c *api.Client, projectID string, instructions string, opts audioCreateOptions) error {
 	// NLM limits to one audio overview per notebook. Check for existing.
 	existing, _ := c.ListAudioOverviews(projectID)
 	if len(existing) > 0 {
@@ -1384,7 +1388,20 @@ func createAudioOverview(c *api.Client, projectID string, instructions string) e
 	fmt.Fprintf(os.Stderr, "Creating audio overview for notebook %s...\n", projectID)
 	fmt.Fprintf(os.Stderr, "Instructions: %s\n", instructions)
 
-	result, err := c.CreateAudioOverview(projectID, instructions)
+	length, err := parseAudioLength(opts.Length)
+	if err != nil {
+		return err
+	}
+	audioType, err := parseAudioType(opts.AudioType, pb.AudioType_AUDIO_TYPE_DEEP_DIVE)
+	if err != nil {
+		return err
+	}
+	result, err := c.CreateAudioOverviewWithOptions(projectID, api.CreateAudioOverviewOptions{
+		Instructions: instructions,
+		AudioType:    audioType,
+		Length:       length,
+		Language:     opts.Language,
+	})
 	if err != nil {
 		return fmt.Errorf("create audio overview: %w", err)
 	}
@@ -4123,6 +4140,10 @@ func startAutoRefreshIfEnabled() {
 }
 
 func createVideoOverview(c *api.Client, projectID string, instructions string) error {
+	return createVideoOverviewWithOptions(c, projectID, instructions, videoCreateOptions{Language: "en"})
+}
+
+func createVideoOverviewWithOptions(c *api.Client, projectID string, instructions string, opts videoCreateOptions) error {
 	// NLM may limit to one video per notebook. Check for existing.
 	existingVideos, _ := c.ListVideoOverviews(projectID)
 	if len(existingVideos) > 0 && !yes {
@@ -4133,7 +4154,20 @@ func createVideoOverview(c *api.Client, projectID string, instructions string) e
 	fmt.Fprintf(os.Stderr, "Creating video overview for notebook %s...\n", projectID)
 	fmt.Printf("Instructions: %s\n", instructions)
 
-	result, err := c.CreateVideoOverview(projectID, instructions)
+	style, err := parseVideoStyle(opts.Style)
+	if err != nil {
+		return err
+	}
+	audioType, err := parseAudioType(opts.AudioType, pb.AudioType_AUDIO_TYPE_BRIEF)
+	if err != nil {
+		return err
+	}
+	result, err := c.CreateVideoOverviewWithOptions(projectID, api.CreateVideoOverviewOptions{
+		Instructions: instructions,
+		AudioType:    audioType,
+		VideoStyle:   style,
+		Language:     opts.Language,
+	})
 	if err != nil {
 		return fmt.Errorf("create video overview: %w", err)
 	}

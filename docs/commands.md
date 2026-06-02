@@ -114,6 +114,11 @@ labels yourself.
 | `nlm create-audio NOTEBOOK_ID "Conversational summary"` | Create an audio overview |
 | `nlm create-video NOTEBOOK_ID "Whiteboard walkthrough"` | Create a video overview |
 | `nlm create-slides NOTEBOOK_ID "Presentation summary"` | Create a slide deck |
+| `nlm app-create --type mindmap NOTEBOOK_ID "Focus on architecture"` | Create a generated app artifact |
+| `nlm app create --type prototype NOTEBOOK_ID "Build a study app"` | Create a generated app artifact |
+| `nlm mindmap-create NOTEBOOK_ID "Focus on architecture"` | Create a generated mind map artifact |
+| `nlm mindmap create NOTEBOOK_ID "Focus on architecture"` | Create a generated mind map artifact |
+| `nlm audio create NOTEBOOK_ID "Conversational summary"` | Create an audio overview |
 | `nlm video create NOTEBOOK_ID "Whiteboard walkthrough"` | Create a video overview |
 | `nlm deck create NOTEBOOK_ID "Presentation summary"` | Create a slide deck |
 | `nlm report-suggestions NOTEBOOK_ID` | Suggest report topics |
@@ -124,6 +129,7 @@ labels yourself.
 | Command | Description |
 |---------|-------------|
 | `nlm audio list NOTEBOOK_ID` | List audio overviews |
+| `nlm audio create NOTEBOOK_ID "Conversational summary"` | Create an audio overview |
 | `nlm audio get NOTEBOOK_ID` | Get audio overview details |
 | `nlm --direct-rpc audio download NOTEBOOK_ID [FILE]` | Download the audio file, or print the browser URL when direct download is unavailable |
 | `nlm audio download NOTEBOOK_ID [FILE]` | Download the audio file, or print the browser URL when direct download is unavailable |

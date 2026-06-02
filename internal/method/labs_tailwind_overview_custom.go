@@ -155,3 +155,33 @@ func EncodeCreateVideoOverviewArgs(req *notebooklmv1alpha1.CreateVideoOverviewRe
 		},
 	}
 }
+
+// EncodeCreateAppArtifactArgs encodes the R7cb6c AppArtifact payload.
+//
+// Bundle evidence (2026-05-31 LabsTailwindUi) maps appType values
+// 3=prototype, 4=mindmap_app, and 5=canvas. The same AppArtifact generation
+// options object carries the user prompt at field 3 ("Tp" in the compiled JS).
+// This follows the HAR-verified R7cb6c envelope used by audio, video, slides,
+// and reports; capture a targeted HAR before changing the nested app shape.
+func EncodeCreateAppArtifactArgs(projectID string, sourceIDs []string, appType int32, instructions string) []interface{} {
+	sourceRefs := encodeOverviewSourceRefs(sourceIDs)
+	return []interface{}{
+		artifactTypeDescriptor,
+		projectID,
+		[]interface{}{
+			nil,
+			nil,
+			5, // artifact type = app
+			sourceRefs,
+			nil, nil, nil, nil, nil,
+			[]interface{}{
+				nil,
+				[]interface{}{
+					appType,      // [0] appType: 3 prototype, 4 mindmap_app, 5 canvas
+					nil,          // [1] app-specific options
+					instructions, // [2] prompt / Tp
+				},
+			},
+		},
+	}
+}

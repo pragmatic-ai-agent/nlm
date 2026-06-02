@@ -33,6 +33,88 @@ import (
 type Notebook = pb.Project
 type Note = pb.Note
 
+type AppArtifactKind int32
+
+const (
+	AppArtifactKindPrototype AppArtifactKind = 3
+	AppArtifactKindMindmap   AppArtifactKind = 4
+	AppArtifactKindCanvas    AppArtifactKind = 5
+)
+
+func ParseAppArtifactKind(s string) (AppArtifactKind, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "prototype", "notebook-app", "notebook_app":
+		return AppArtifactKindPrototype, nil
+	case "mindmap", "mindmap_app", "mind-map":
+		return AppArtifactKindMindmap, nil
+	case "canvas":
+		return AppArtifactKindCanvas, nil
+	default:
+		return 0, fmt.Errorf("unknown app artifact type %q", s)
+	}
+}
+
+func (k AppArtifactKind) String() string {
+	switch k {
+	case AppArtifactKindPrototype:
+		return "prototype"
+	case AppArtifactKindMindmap:
+		return "mindmap"
+	case AppArtifactKindCanvas:
+		return "canvas"
+	default:
+		return fmt.Sprintf("AppArtifactKind(%d)", k)
+	}
+}
+
+func (k AppArtifactKind) valid() bool {
+	switch k {
+	case AppArtifactKindPrototype, AppArtifactKindMindmap, AppArtifactKindCanvas:
+		return true
+	default:
+		return false
+	}
+}
+
+type CreateAudioOverviewOptions struct {
+	Instructions string
+	AudioType    pb.AudioType
+	Length       pb.AudioLength
+	Language     string
+	SourceIDs    []string
+}
+
+func (opts CreateAudioOverviewOptions) withDefaults() CreateAudioOverviewOptions {
+	if opts.AudioType == pb.AudioType_AUDIO_TYPE_UNSPECIFIED {
+		opts.AudioType = pb.AudioType_AUDIO_TYPE_DEEP_DIVE
+	}
+	if opts.Length == pb.AudioLength_AUDIO_LENGTH_UNSPECIFIED {
+		opts.Length = pb.AudioLength_AUDIO_LENGTH_DEFAULT
+	}
+	if opts.Language == "" {
+		opts.Language = "en"
+	}
+	return opts
+}
+
+type CreateVideoOverviewOptions struct {
+	Instructions string
+	AudioType    pb.AudioType
+	VideoStyle   pb.VideoStyle
+	Language     string
+	SourceIDs    []string
+}
+
+func (opts CreateVideoOverviewOptions) withDefaults() CreateVideoOverviewOptions {
+	if opts.AudioType == pb.AudioType_AUDIO_TYPE_UNSPECIFIED {
+		opts.AudioType = pb.AudioType_AUDIO_TYPE_BRIEF
+	}
+	if opts.Language == "" {
+		opts.Language = "en"
+	}
+	return opts
+}
+
 // httpClientWithTimeout returns an IPv4-preferring HTTP client with the given timeout.
 func httpClientWithTimeout(timeout time.Duration) *http.Client {
 	c := batchexecute.NewIPv4HTTPClient()
@@ -1527,29 +1609,29 @@ func parseNoteFromResponse(data interface{}) *Note {
 // Audio operations
 
 func (c *Client) CreateAudioOverview(projectID string, instructions string) (*AudioOverviewResult, error) {
+	return c.CreateAudioOverviewWithOptions(projectID, CreateAudioOverviewOptions{
+		Instructions: instructions,
+	})
+}
+
+func (c *Client) CreateAudioOverviewWithOptions(projectID string, opts CreateAudioOverviewOptions) (*AudioOverviewResult, error) {
 	if projectID == "" {
 		return nil, fmt.Errorf("project ID required")
 	}
+	opts = opts.withDefaults()
 
 	// Use direct RPC if configured
-	if c.config.UseDirectRPC {
-		return c.createAudioOverviewDirectRPC(projectID, instructions)
+	if c.config.UseDirectRPC && len(opts.SourceIDs) == 0 &&
+		opts.AudioType == pb.AudioType_AUDIO_TYPE_DEEP_DIVE &&
+		opts.Length == pb.AudioLength_AUDIO_LENGTH_DEFAULT &&
+		opts.Language == "en" {
+		return c.createAudioOverviewDirectRPC(projectID, opts.Instructions)
 	}
 
-	// Get project to extract source IDs
-	project, err := c.GetProject(projectID)
+	sourceIDs, err := c.createArtifactSourceIDs(projectID, opts.SourceIDs)
 	if err != nil {
-		return nil, fmt.Errorf("get project sources: %w", err)
+		return nil, err
 	}
-
-	// Extract source IDs from project
-	var sourceIDs []string
-	for _, source := range project.Sources {
-		if source.SourceId != nil {
-			sourceIDs = append(sourceIDs, source.SourceId.SourceId)
-		}
-	}
-
 	if len(sourceIDs) == 0 {
 		return nil, fmt.Errorf("project has no sources - add sources before creating audio overview")
 	}
@@ -1557,11 +1639,11 @@ func (c *Client) CreateAudioOverview(projectID string, instructions string) (*Au
 	// Default: use orchestration service with new proto fields
 	req := &pb.CreateAudioOverviewRequest{
 		ProjectId:          projectID,
-		AudioType:          pb.AudioType_AUDIO_TYPE_DEEP_DIVE, // Default to Deep Dive (value=1)
+		AudioType:          opts.AudioType,
 		SourceIds:          sourceIDs,
-		CustomInstructions: instructions,
-		Length:             pb.AudioLength_AUDIO_LENGTH_DEFAULT, // Default length (value=2)
-		Language:           "en",
+		CustomInstructions: opts.Instructions,
+		Length:             opts.Length,
+		Language:           opts.Language,
 	}
 	ctx := context.Background()
 	audioOverview, err := c.orchestrationService.CreateAudioOverview(ctx, req)
@@ -2025,24 +2107,23 @@ func videoOverviewResultFromArtifactData(projectID string, artifactData []interf
 }
 
 func (c *Client) CreateVideoOverview(projectID string, instructions string) (*VideoOverviewResult, error) {
+	return c.CreateVideoOverviewWithOptions(projectID, CreateVideoOverviewOptions{
+		Instructions: instructions,
+	})
+}
+
+func (c *Client) CreateVideoOverviewWithOptions(projectID string, opts CreateVideoOverviewOptions) (*VideoOverviewResult, error) {
 	if projectID == "" {
 		return nil, fmt.Errorf("project ID required")
 	}
-	if instructions == "" {
+	opts = opts.withDefaults()
+	if opts.Instructions == "" {
 		return nil, fmt.Errorf("instructions required")
 	}
 
-	// Get project to extract source IDs
-	project, err := c.GetProject(projectID)
+	sourceIDs, err := c.createArtifactSourceIDs(projectID, opts.SourceIDs)
 	if err != nil {
-		return nil, fmt.Errorf("get project sources: %w", err)
-	}
-
-	var sourceIDs []string
-	for _, source := range project.Sources {
-		if source.SourceId != nil {
-			sourceIDs = append(sourceIDs, source.SourceId.SourceId)
-		}
+		return nil, err
 	}
 	if len(sourceIDs) == 0 {
 		return nil, fmt.Errorf("project has no sources - add sources before creating video overview")
@@ -2051,10 +2132,11 @@ func (c *Client) CreateVideoOverview(projectID string, instructions string) (*Vi
 	// Build request and use the proper encoder via R7cb6c
 	req := &pb.CreateVideoOverviewRequest{
 		ProjectId:          projectID,
-		AudioType:          pb.AudioType_AUDIO_TYPE_BRIEF, // Videos default to brief style
+		AudioType:          opts.AudioType,
 		SourceIds:          sourceIDs,
-		CustomInstructions: instructions,
-		Language:           "en",
+		CustomInstructions: opts.Instructions,
+		VideoStyle:         opts.VideoStyle,
+		Language:           opts.Language,
 	}
 
 	args := intmethod.EncodeCreateVideoOverviewArgs(req)
@@ -2085,6 +2167,52 @@ func (c *Client) CreateVideoOverview(projectID string, instructions string) (*Vi
 	}
 
 	return result, nil
+}
+
+func (c *Client) CreateAppArtifact(projectID string, kind AppArtifactKind, instructions string, sourceIDs []string) (string, error) {
+	if projectID == "" {
+		return "", fmt.Errorf("project ID required")
+	}
+	if !kind.valid() {
+		return "", fmt.Errorf("invalid app artifact type %q", kind.String())
+	}
+	if instructions == "" {
+		return "", fmt.Errorf("instructions required")
+	}
+	resolvedSourceIDs, err := c.createArtifactSourceIDs(projectID, sourceIDs)
+	if err != nil {
+		return "", err
+	}
+	if len(resolvedSourceIDs) == 0 {
+		return "", fmt.Errorf("notebook has no sources")
+	}
+
+	args := intmethod.EncodeCreateAppArtifactArgs(projectID, resolvedSourceIDs, int32(kind), instructions)
+	resp, err := c.rpc.Do(rpc.Call{
+		ID:         rpc.RPCCreateVideoOverview,
+		NotebookID: projectID,
+		Args:       args,
+	})
+	if err != nil {
+		return "", fmt.Errorf("create %s app artifact: %w", kind.String(), err)
+	}
+	return parseCreatedArtifactID(resp)
+}
+
+func (c *Client) createArtifactSourceIDs(projectID string, sourceIDs []string) ([]string, error) {
+	if len(sourceIDs) > 0 {
+		return sourceIDs, nil
+	}
+	project, err := c.GetProject(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("get project sources: %w", err)
+	}
+	for _, src := range project.Sources {
+		if src.SourceId != nil {
+			sourceIDs = append(sourceIDs, src.SourceId.SourceId)
+		}
+	}
+	return sourceIDs, nil
 }
 
 // DownloadAudioOverview attempts to download the actual audio file
@@ -3182,11 +3310,14 @@ func (c *Client) CreateSlideDeck(projectID, instructions string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("create slide deck: %w", err)
 	}
+	return parseCreatedArtifactID(resp)
+}
 
+func parseCreatedArtifactID(resp []byte) (string, error) {
 	// Response is [[artifact_id, title, type, ...]] — unwrap outer array.
 	var raw []interface{}
 	if err := json.Unmarshal(resp, &raw); err != nil {
-		return "", fmt.Errorf("parse slide deck response: %w", err)
+		return "", fmt.Errorf("parse artifact response: %w", err)
 	}
 	// Try direct string at [0]
 	if len(raw) > 0 {
@@ -3200,7 +3331,7 @@ func (c *Client) CreateSlideDeck(projectID, instructions string) (string, error)
 			}
 		}
 	}
-	return "", fmt.Errorf("unexpected slide deck response format")
+	return "", fmt.Errorf("unexpected artifact response format")
 }
 
 // CreateReport creates a report artifact via R7cb6c (mode 4).

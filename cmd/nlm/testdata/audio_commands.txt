@@ -12,9 +12,9 @@ stderr 'usage: nlm create-audio <notebook-id> <instructions>'
 stderr 'usage: nlm create-audio <notebook-id> <instructions>'
 ! stderr 'panic'
 
-# Test create-audio with too many arguments (should fail with usage)
+# Test create-audio with multi-word instructions (should pass validation, then fail auth)
 ! exec ./nlm_test create-audio notebook123 instructions extra
-stderr 'usage: nlm create-audio <notebook-id> <instructions>'
+stderr 'Authentication required'
 ! stderr 'panic'
 
 # Test create-audio without authentication (should fail)
@@ -76,9 +76,9 @@ stderr 'usage: nlm create-video <notebook-id> <instructions>'
 stderr 'usage: nlm create-video <notebook-id> <instructions>'
 ! stderr 'panic'
 
-# Test create-video with too many arguments (should fail with usage)
+# Test create-video with multi-word instructions (should pass validation, then fail auth)
 ! exec ./nlm_test create-video notebook123 instructions extra
-stderr 'usage: nlm create-video <notebook-id> <instructions>'
+stderr 'Authentication required'
 ! stderr 'panic'
 
 # Test create-video without authentication (should fail)

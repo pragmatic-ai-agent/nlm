@@ -143,6 +143,21 @@ func TestEncodeCreateSlideDeckArgs(t *testing.T) {
 	}
 }
 
+func TestEncodeCreateAppArtifactArgs(t *testing.T) {
+	t.Parallel()
+
+	got := EncodeCreateAppArtifactArgs(harProjectID, harSourceIDs[:2], 4, "focus on architecture")
+	gotJSON := mustMarshal(t, got)
+	want := `[`
+	want += `[2,null,null,[1,null,null,null,null,null,null,null,null,null,[1]],[[1,4,2,3,6,5]]],`
+	want += `"00000000-0000-4000-8000-000000000003",`
+	want += `[null,null,5,[[["00000000-0000-4000-8000-000000000101"]],[["00000000-0000-4000-8000-000000000102"]]],null,null,null,null,null,[null,[4,null,"focus on architecture"]]]`
+	want += `]`
+	if string(gotJSON) != want {
+		t.Fatalf("EncodeCreateAppArtifactArgs =\n  %s\nwant:\n  %s", gotJSON, want)
+	}
+}
+
 // TestEncodeOverviewSourceRefs verifies 3-level nesting: [[[id1]], [[id2]], ...]
 func TestEncodeOverviewSourceRefs(t *testing.T) {
 	t.Parallel()

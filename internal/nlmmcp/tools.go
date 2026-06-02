@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	pb "github.com/tmc/nlm/gen/notebooklm/v1alpha1"
@@ -56,8 +57,12 @@ type listArtifactsInput struct {
 }
 
 type createAudioOverviewInput struct {
-	NotebookID   string `json:"notebook_id"`
-	Instructions string `json:"instructions,omitempty"`
+	NotebookID   string   `json:"notebook_id"`
+	Instructions string   `json:"instructions,omitempty"`
+	Length       string   `json:"length,omitempty" jsonschema:"Audio length: default, short, or long"`
+	Language     string   `json:"language,omitempty" jsonschema:"Language code (default en)"`
+	AudioType    string   `json:"audio_type,omitempty" jsonschema:"Audio style: deep-dive, brief, critique, or debate"`
+	SourceIDs    []string `json:"source_ids,omitempty" jsonschema:"Optional source IDs; defaults to all notebook sources"`
 }
 
 type getAudioOverviewInput struct {
@@ -104,13 +109,24 @@ type generateContentInput struct {
 }
 
 type createVideoOverviewInput struct {
-	NotebookID   string `json:"notebook_id"`
-	Instructions string `json:"instructions"`
+	NotebookID   string   `json:"notebook_id"`
+	Instructions string   `json:"instructions"`
+	Style        string   `json:"style,omitempty" jsonschema:"Video style: auto, classic, or whiteboard"`
+	Language     string   `json:"language,omitempty" jsonschema:"Language code (default en)"`
+	AudioType    string   `json:"audio_type,omitempty" jsonschema:"Content style: brief, deep-dive, critique, or debate"`
+	SourceIDs    []string `json:"source_ids,omitempty" jsonschema:"Optional source IDs; defaults to all notebook sources"`
 }
 
 type createSlideDeckInput struct {
 	NotebookID   string `json:"notebook_id"`
 	Instructions string `json:"instructions"`
+}
+
+type createAppArtifactInput struct {
+	NotebookID   string   `json:"notebook_id"`
+	Type         string   `json:"type" jsonschema:"App type: prototype, mindmap, or canvas"`
+	Instructions string   `json:"instructions"`
+	SourceIDs    []string `json:"source_ids,omitempty" jsonschema:"Optional source IDs; defaults to all notebook sources"`
 }
 
 type readNoteInput struct {
@@ -308,7 +324,21 @@ func registerTools(server *mcp.Server, client *api.Client) {
 		Description: "Create a new audio overview.",
 		Annotations: mutatingAnnotations,
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input createAudioOverviewInput) (*mcp.CallToolResult, any, error) {
-		result, err := client.CreateAudioOverview(input.NotebookID, input.Instructions)
+		length, err := parseMCPAudioLength(input.Length)
+		if err != nil {
+			return errorResult(err.Error()), nil, nil
+		}
+		audioType, err := parseMCPAudioType(input.AudioType, pb.AudioType_AUDIO_TYPE_DEEP_DIVE)
+		if err != nil {
+			return errorResult(err.Error()), nil, nil
+		}
+		result, err := client.CreateAudioOverviewWithOptions(input.NotebookID, api.CreateAudioOverviewOptions{
+			Instructions: input.Instructions,
+			AudioType:    audioType,
+			Length:       length,
+			Language:     input.Language,
+			SourceIDs:    input.SourceIDs,
+		})
 		if err != nil {
 			return errorResult(fmt.Sprintf("failed to create audio overview: %v", err)), nil, nil
 		}
@@ -366,11 +396,41 @@ func registerTools(server *mcp.Server, client *api.Client) {
 		Description: "Create a new video overview for a notebook.",
 		Annotations: mutatingAnnotations,
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input createVideoOverviewInput) (*mcp.CallToolResult, any, error) {
-		result, err := client.CreateVideoOverview(input.NotebookID, input.Instructions)
+		style, err := parseMCPVideoStyle(input.Style)
+		if err != nil {
+			return errorResult(err.Error()), nil, nil
+		}
+		audioType, err := parseMCPAudioType(input.AudioType, pb.AudioType_AUDIO_TYPE_BRIEF)
+		if err != nil {
+			return errorResult(err.Error()), nil, nil
+		}
+		result, err := client.CreateVideoOverviewWithOptions(input.NotebookID, api.CreateVideoOverviewOptions{
+			Instructions: input.Instructions,
+			AudioType:    audioType,
+			VideoStyle:   style,
+			Language:     input.Language,
+			SourceIDs:    input.SourceIDs,
+		})
 		if err != nil {
 			return errorResult(fmt.Sprintf("failed to create video overview: %v", err)), nil, nil
 		}
 		return textResult(fmt.Sprintf("started video overview (id: %s)", result.VideoID)), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "create_app_artifact",
+		Description: "Create a generated app artifact (prototype, mindmap, or canvas).",
+		Annotations: mutatingAnnotations,
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input createAppArtifactInput) (*mcp.CallToolResult, any, error) {
+		kind, err := api.ParseAppArtifactKind(input.Type)
+		if err != nil {
+			return errorResult(err.Error()), nil, nil
+		}
+		artifactID, err := client.CreateAppArtifact(input.NotebookID, kind, input.Instructions, input.SourceIDs)
+		if err != nil {
+			return errorResult(fmt.Sprintf("failed to create app artifact: %v", err)), nil, nil
+		}
+		return textResult(fmt.Sprintf("started %s app artifact (id: %s)", kind.String(), artifactID)), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -669,5 +729,48 @@ func artifactStateLabel(s pb.ArtifactState) string {
 		return "ARTIFACT_STATE_9"
 	default:
 		return fmt.Sprintf("ARTIFACT_STATE_%d", int32(s))
+	}
+}
+
+func parseMCPAudioLength(s string) (pb.AudioLength, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "default":
+		return pb.AudioLength_AUDIO_LENGTH_DEFAULT, nil
+	case "short", "shorter":
+		return pb.AudioLength_AUDIO_LENGTH_SHORT, nil
+	case "long", "longer":
+		return pb.AudioLength_AUDIO_LENGTH_LONG, nil
+	default:
+		return 0, fmt.Errorf("unknown audio length %q", s)
+	}
+}
+
+func parseMCPAudioType(s string, def pb.AudioType) (pb.AudioType, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "":
+		return def, nil
+	case "deep-dive", "deep_dive", "deep":
+		return pb.AudioType_AUDIO_TYPE_DEEP_DIVE, nil
+	case "brief":
+		return pb.AudioType_AUDIO_TYPE_BRIEF, nil
+	case "critique":
+		return pb.AudioType_AUDIO_TYPE_CRITIQUE, nil
+	case "debate":
+		return pb.AudioType_AUDIO_TYPE_DEBATE, nil
+	default:
+		return 0, fmt.Errorf("unknown audio type %q", s)
+	}
+}
+
+func parseMCPVideoStyle(s string) (pb.VideoStyle, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "auto", "autoselect", "auto-select":
+		return pb.VideoStyle_VIDEO_STYLE_AUTOSELECT, nil
+	case "classic":
+		return pb.VideoStyle_VIDEO_STYLE_CLASSIC, nil
+	case "whiteboard", "white-board":
+		return pb.VideoStyle_VIDEO_STYLE_WHITEBOARD, nil
+	default:
+		return 0, fmt.Errorf("unknown video style %q", s)
 	}
 }

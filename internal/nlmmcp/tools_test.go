@@ -65,3 +65,29 @@ func TestArtifactLabels(t *testing.T) {
 		t.Fatalf("artifactStateLabel(7) = %q, want %q", got, "ARTIFACT_STATE_7")
 	}
 }
+
+func TestCreateOptionParsers(t *testing.T) {
+	t.Parallel()
+
+	length, err := parseMCPAudioLength("long")
+	if err != nil {
+		t.Fatalf("parseMCPAudioLength: %v", err)
+	}
+	if length != pb.AudioLength_AUDIO_LENGTH_LONG {
+		t.Fatalf("length = %v, want long", length)
+	}
+	audioType, err := parseMCPAudioType("debate", pb.AudioType_AUDIO_TYPE_BRIEF)
+	if err != nil {
+		t.Fatalf("parseMCPAudioType: %v", err)
+	}
+	if audioType != pb.AudioType_AUDIO_TYPE_DEBATE {
+		t.Fatalf("audioType = %v, want debate", audioType)
+	}
+	style, err := parseMCPVideoStyle("whiteboard")
+	if err != nil {
+		t.Fatalf("parseMCPVideoStyle: %v", err)
+	}
+	if style != pb.VideoStyle_VIDEO_STYLE_WHITEBOARD {
+		t.Fatalf("style = %v, want whiteboard", style)
+	}
+}
