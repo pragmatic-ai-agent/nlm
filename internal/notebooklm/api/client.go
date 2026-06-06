@@ -3427,19 +3427,23 @@ func parseCreatedArtifactID(resp []byte) (string, error) {
 	if err := json.Unmarshal(resp, &raw); err != nil {
 		return "", fmt.Errorf("parse artifact response: %w", err)
 	}
-	// Try direct string at [0]
+	// Try direct string at [0], then the nested [[id, title, ...]] shape. An
+	// empty-string id is treated as no id at all: the server returns a blank
+	// id when a create is rejected (e.g. quota exhausted) without an RPC-level
+	// error, and returning ("", nil) would let callers print a blank line as
+	// if creation succeeded. Fall through to the format error instead so the
+	// failure is visible.
 	if len(raw) > 0 {
-		if id, ok := raw[0].(string); ok {
+		if id, ok := raw[0].(string); ok && id != "" {
 			return id, nil
 		}
-		// Unwrap nested array: [[id, title, ...]]
 		if inner, ok := raw[0].([]interface{}); ok && len(inner) > 0 {
-			if id, ok := inner[0].(string); ok {
+			if id, ok := inner[0].(string); ok && id != "" {
 				return id, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("unexpected artifact response format")
+	return "", fmt.Errorf("create returned no artifact id (the server may have rejected it, e.g. quota exhausted); check 'nlm artifact list'")
 }
 
 // CreateReport creates a report artifact via R7cb6c (mode 4).

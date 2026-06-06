@@ -45,3 +45,20 @@ func TestParseCreatedArtifactID(t *testing.T) {
 		t.Fatalf("artifact id = %q, want artifact-1", got)
 	}
 }
+
+// TestParseCreatedArtifactIDRejectsEmpty verifies that a blank id — what the
+// server returns when a create is rejected without an RPC-level error (e.g.
+// quota exhausted) — surfaces as an error instead of a silent empty id.
+func TestParseCreatedArtifactIDRejectsEmpty(t *testing.T) {
+	t.Parallel()
+
+	for _, resp := range []string{`[""]`, `[["", "Title", 5]]`, `[]`, `[[]]`} {
+		got, err := parseCreatedArtifactID([]byte(resp))
+		if err == nil {
+			t.Errorf("parseCreatedArtifactID(%s) = %q, nil; want error", resp, got)
+		}
+		if got != "" {
+			t.Errorf("parseCreatedArtifactID(%s) id = %q, want empty", resp, got)
+		}
+	}
+}
