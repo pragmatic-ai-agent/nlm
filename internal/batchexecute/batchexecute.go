@@ -1,6 +1,8 @@
 package batchexecute
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/json"
@@ -12,6 +14,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -758,7 +762,170 @@ func NewIPv4HTTPClient() *http.Client {
 		IdleConnTimeout:     90 * time.Second,
 		TLSHandshakeTimeout: 10 * time.Second,
 	}
-	return &http.Client{Transport: transport}
+	if strings.EqualFold(os.Getenv("NLM_HTTP_TRANSPORT"), "curl") {
+		return &http.Client{Transport: curl4RoundTripper{}}
+	}
+	return &http.Client{Transport: curl4FallbackTransport{primary: transport}}
+}
+
+type curl4FallbackTransport struct {
+	primary http.RoundTripper
+}
+
+func (t curl4FallbackTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	body, err := readRequestBody(req)
+	if err != nil {
+		return nil, err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(body))
+
+	resp, err := t.primary.RoundTrip(req)
+	if err == nil || !shouldFallbackToCurl4(err) {
+		return resp, err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	return curl4RoundTrip(req, body, err)
+}
+
+type curl4RoundTripper struct{}
+
+func (curl4RoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	body, err := readRequestBody(req)
+	if err != nil {
+		return nil, err
+	}
+	return curl4RoundTrip(req, body, nil)
+}
+
+func readRequestBody(req *http.Request) ([]byte, error) {
+	if req.Body == nil {
+		return nil, nil
+	}
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read request body: %w", err)
+	}
+	return body, nil
+}
+
+func shouldFallbackToCurl4(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "connect: bad file descriptor") ||
+		strings.Contains(s, "socket is not connected") ||
+		strings.Contains(s, "use of closed network connection")
+}
+
+func curl4RoundTrip(req *http.Request, body []byte, primaryErr error) (*http.Response, error) {
+	if _, err := exec.LookPath("curl"); err != nil {
+		if primaryErr != nil {
+			return nil, primaryErr
+		}
+		return nil, fmt.Errorf("curl -4 transport: %w", err)
+	}
+
+	dir, err := os.MkdirTemp("", "nlm-curl-*")
+	if err != nil {
+		return nil, fmt.Errorf("curl -4 transport: temp dir: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	headerFile := filepath.Join(dir, "headers")
+	bodyFile := filepath.Join(dir, "body")
+	configFile := filepath.Join(dir, "curl.conf")
+	requestBodyFile := filepath.Join(dir, "request-body")
+	if len(body) > 0 {
+		if err := os.WriteFile(requestBodyFile, body, 0600); err != nil {
+			return nil, fmt.Errorf("curl -4 transport: write request body: %w", err)
+		}
+	}
+
+	var config strings.Builder
+	config.WriteString("ipv4\n")
+	config.WriteString("http1.1\n")
+	config.WriteString("silent\n")
+	config.WriteString("show-error\n")
+	fmt.Fprintf(&config, "request = %q\n", req.Method)
+	fmt.Fprintf(&config, "url = %q\n", req.URL.String())
+	fmt.Fprintf(&config, "dump-header = %q\n", headerFile)
+	fmt.Fprintf(&config, "output = %q\n", bodyFile)
+	config.WriteString("write-out = \"%{http_code}\"\n")
+	config.WriteString("connect-timeout = \"30\"\n")
+	config.WriteString("max-time = \"300\"\n")
+	for name, values := range req.Header {
+		for _, value := range values {
+			fmt.Fprintf(&config, "header = %q\n", name+": "+value)
+		}
+	}
+	if len(body) > 0 {
+		fmt.Fprintf(&config, "data-binary = %q\n", "@"+requestBodyFile)
+	}
+	if err := os.WriteFile(configFile, []byte(config.String()), 0600); err != nil {
+		return nil, fmt.Errorf("curl -4 transport: write config: %w", err)
+	}
+
+	var stderr bytes.Buffer
+	cmd := exec.Command("curl", "--config", configFile)
+	cmd.Stderr = &stderr
+	statusBytes, err := cmd.Output()
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = strings.TrimSpace(string(statusBytes))
+		}
+		if primaryErr != nil {
+			return nil, fmt.Errorf("go transport failed (%v); curl -4 fallback failed: %s: %w", primaryErr, msg, err)
+		}
+		return nil, fmt.Errorf("curl -4 transport failed: %s: %w", msg, err)
+	}
+
+	resp, err := readCurlResponse(req, headerFile, bodyFile, strings.TrimSpace(string(statusBytes)))
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func readCurlResponse(req *http.Request, headerFile, bodyFile, statusText string) (*http.Response, error) {
+	headerBytes, err := os.ReadFile(headerFile)
+	if err != nil {
+		return nil, fmt.Errorf("curl -4 transport: read headers: %w", err)
+	}
+	body, err := os.ReadFile(bodyFile)
+	if err != nil {
+		return nil, fmt.Errorf("curl -4 transport: read body: %w", err)
+	}
+	block := lastHTTPHeaderBlock(string(headerBytes))
+	if block == "" {
+		return nil, fmt.Errorf("curl -4 transport: missing response headers")
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(strings.NewReader(block+"\r\n\r\n")), req)
+	if err != nil {
+		return nil, fmt.Errorf("curl -4 transport: parse response: %w", err)
+	}
+	if statusText != "" {
+		if code, err := strconv.Atoi(statusText); err == nil && code != resp.StatusCode {
+			resp.StatusCode = code
+			resp.Status = fmt.Sprintf("%d %s", code, http.StatusText(code))
+		}
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	resp.ContentLength = int64(len(body))
+	return resp, nil
+}
+
+func lastHTTPHeaderBlock(headers string) string {
+	headers = strings.ReplaceAll(headers, "\r\n", "\n")
+	parts := strings.Split(headers, "\n\n")
+	for i := len(parts) - 1; i >= 0; i-- {
+		part := strings.TrimSpace(parts[i])
+		if strings.HasPrefix(part, "HTTP/") {
+			return strings.ReplaceAll(part, "\n", "\r\n")
+		}
+	}
+	return ""
 }
 
 // ReqIDGenerator generates sequential request IDs
