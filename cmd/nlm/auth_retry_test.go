@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/tmc/nlm/internal/auth"
+	"github.com/tmc/nlm/internal/batchexecute"
 )
 
 func TestIsAuthenticationError(t *testing.T) {
@@ -36,6 +37,22 @@ func TestIsAuthenticationError(t *testing.T) {
 		{
 			name: "service unavailable",
 			err:  errors.New("api error 3 (Unavailable): Service unavailable"),
+			want: false,
+		},
+		{
+			name: "permission denied is access not auth",
+			err: &batchexecute.APIError{
+				ErrorCode: &batchexecute.ErrorCode{
+					Code:    7,
+					Type:    batchexecute.ErrorTypePermissionDenied,
+					Message: "Permission denied",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "http 403 is access not auth",
+			err:  &batchexecute.APIError{HTTPStatus: 403, Message: "Forbidden"},
 			want: false,
 		},
 	}

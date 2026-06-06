@@ -53,6 +53,13 @@ var (
 	// polled via e3bVqc and the final report has not arrived. Maps to exit
 	// code 7 (resource busy).
 	ErrResearchPolling = errors.New("research is still in progress")
+
+	// ErrNotebookNotAccessible indicates GetProject could not read the
+	// notebook because it does not exist for this account or the account does
+	// not have access. NotebookLM intentionally blurs not-found and
+	// permission-denied in some paths; callers should present both cases
+	// together instead of treating this as expired authentication.
+	ErrNotebookNotAccessible = errors.New("notebook not found or not accessible")
 )
 
 // NotebookCapError carries the observed account state alongside an
@@ -91,4 +98,26 @@ func (e *NotebookCapError) Unwrap() error { return e.Err }
 // without losing the count/limit when re-wrapping).
 func (e *NotebookCapError) Is(target error) bool {
 	return target == ErrNotebookCapReached
+}
+
+// NotebookAccessError carries the requested notebook ID alongside an
+// ErrNotebookNotAccessible classification. The underlying error is preserved
+// so callers can still inspect the original batchexecute response.
+type NotebookAccessError struct {
+	NotebookID string
+	Err        error
+}
+
+func (e *NotebookAccessError) Error() string {
+	msg := ErrNotebookNotAccessible.Error()
+	if e.Err != nil {
+		return msg + ": " + e.Err.Error()
+	}
+	return msg
+}
+
+func (e *NotebookAccessError) Unwrap() error { return e.Err }
+
+func (e *NotebookAccessError) Is(target error) bool {
+	return target == ErrNotebookNotAccessible
 }

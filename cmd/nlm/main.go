@@ -221,6 +221,14 @@ func friendlyError(err error) string {
 		}
 		return friendlyTypedError(err, api.ErrNotebookCapReached, msg)
 	}
+	if errors.Is(err, api.ErrNotebookNotAccessible) {
+		msg := "notebook not found or not accessible by the current account"
+		var accessErr *api.NotebookAccessError
+		if errors.As(err, &accessErr) && accessErr.NotebookID != "" {
+			msg = fmt.Sprintf("notebook %s not found or not accessible by the current account", accessErr.NotebookID)
+		}
+		return friendlyTypedError(err, api.ErrNotebookNotAccessible, msg)
+	}
 	var apiErr *batchexecute.APIError
 	if !errors.As(err, &apiErr) {
 		if isAuthenticationError(err) {
@@ -282,15 +290,18 @@ func friendlyTypedError(err, target error, msg string) string {
 func friendlyAPIMessage(apiErr *batchexecute.APIError) string {
 	if apiErr.ErrorCode != nil {
 		switch apiErr.ErrorCode.Type {
-		case batchexecute.ErrorTypeAuthentication,
-			batchexecute.ErrorTypeAuthorization,
-			batchexecute.ErrorTypePermissionDenied:
+		case batchexecute.ErrorTypeAuthentication:
 			return "authentication expired or invalid; run `nlm auth` to refresh, or re-export NLM_AUTH_TOKEN / NLM_COOKIES"
+		case batchexecute.ErrorTypeAuthorization,
+			batchexecute.ErrorTypePermissionDenied:
+			return "resource not found or not accessible by the current account"
 		}
 	}
 	switch apiErr.HTTPStatus {
-	case 401, 403:
+	case 401:
 		return "authentication expired or invalid; run `nlm auth` to refresh, or re-export NLM_AUTH_TOKEN / NLM_COOKIES"
+	case 403:
+		return "resource not found or not accessible by the current account"
 	}
 	// Code 9 ("Failed precondition") arrives bare for AddSource* — no
 	// diagnostic text. The dictionary description ("Operation was rejected
@@ -466,6 +477,26 @@ func isAuthenticationError(err error) bool {
 		return false
 	}
 
+	var apiErr *batchexecute.APIError
+	if errors.As(err, &apiErr) {
+		if apiErr.ErrorCode != nil {
+			switch apiErr.ErrorCode.Type {
+			case batchexecute.ErrorTypeAuthentication:
+				return true
+			case batchexecute.ErrorTypeAuthorization,
+				batchexecute.ErrorTypePermissionDenied,
+				batchexecute.ErrorTypeNotFound:
+				return false
+			}
+		}
+		switch apiErr.HTTPStatus {
+		case 401:
+			return true
+		case 403, 404:
+			return false
+		}
+	}
+
 	// Check for batchexecute unauthorized error
 	if errors.Is(err, batchexecute.ErrUnauthorized) {
 		return true
@@ -480,7 +511,6 @@ func isAuthenticationError(err error) bool {
 		"api error 16", // Google API authentication error
 		"error 16",
 		"status: 401",
-		"status: 403",
 		"session invalid",
 		"invalid session",
 		"session expired",

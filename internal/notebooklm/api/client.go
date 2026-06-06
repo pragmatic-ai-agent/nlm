@@ -353,6 +353,26 @@ func isLikelyQuotaError(err error) bool {
 	return false
 }
 
+func classifyGetProjectError(projectID string, err error) error {
+	var apiErr *batchexecute.APIError
+	if !errors.As(err, &apiErr) {
+		return err
+	}
+	if apiErr.ErrorCode != nil {
+		switch apiErr.ErrorCode.Type {
+		case batchexecute.ErrorTypeAuthorization,
+			batchexecute.ErrorTypePermissionDenied,
+			batchexecute.ErrorTypeNotFound:
+			return &NotebookAccessError{NotebookID: projectID, Err: err}
+		}
+	}
+	switch apiErr.HTTPStatus {
+	case http.StatusForbidden, http.StatusNotFound:
+		return &NotebookAccessError{NotebookID: projectID, Err: err}
+	}
+	return err
+}
+
 func (c *Client) GetProject(projectID string) (*Notebook, error) {
 	req := &pb.GetProjectRequest{
 		ProjectId: projectID,
@@ -361,7 +381,7 @@ func (c *Client) GetProject(projectID string) (*Notebook, error) {
 	ctx := context.Background()
 	project, err := c.orchestrationService.GetProject(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("get project: %w", err)
+		return nil, fmt.Errorf("get project: %w", classifyGetProjectError(projectID, err))
 	}
 
 	if c.config.Debug && project.Sources != nil {
