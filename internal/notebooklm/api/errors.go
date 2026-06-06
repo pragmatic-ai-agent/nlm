@@ -60,6 +60,15 @@ var (
 	// permission-denied in some paths; callers should present both cases
 	// together instead of treating this as expired authentication.
 	ErrNotebookNotAccessible = errors.New("notebook not found or not accessible")
+
+	// ErrAuthExpired indicates the stored NotebookLM session is no longer
+	// valid (expired cookies / auth token) and the user must re-run `nlm
+	// auth`. The wire signal is batchexecute API error 16 (Unauthenticated)
+	// on the RPC path; the gRPC-Web chat path instead returns an HTTP 200 with
+	// an error frame and no content, which otherwise reads as a silent "empty
+	// response". Callers wrap with this sentinel so cmd/nlm can print a single
+	// actionable message instead of a generic empty/parse error.
+	ErrAuthExpired = errors.New("authentication expired; run 'nlm auth' to re-authenticate")
 )
 
 // NotebookCapError carries the observed account state alongside an

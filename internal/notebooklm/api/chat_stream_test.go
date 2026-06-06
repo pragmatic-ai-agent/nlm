@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -246,11 +247,9 @@ func TestParseCitationsV2SlotOrdering(t *testing.T) {
 }
 
 // TestParseCitationsV2SkipsUnresolvableSrcIdx exercises the case where
-// the server emits a srcIdx past the end of the request's source list —
-// observed when --source-ids narrows to a subset and the server still
-// references the original full set. A Citation we can't resolve to a
-// SourceID is unusable downstream, so the parser drops it rather than
-// emitting a blank footer line.
+// the server emits a srcIdx past the end of the request's source list.
+// A Citation we can't resolve to a SourceID is unusable downstream, so
+// the parser drops it rather than emitting a blank footer line.
 func TestParseCitationsV2SkipsUnresolvableSrcIdx(t *testing.T) {
 	sourceIDs := []string{"src_a"} // request narrowed to one source
 	mappingData := []interface{}{
@@ -286,6 +285,116 @@ func TestParseCitationsV2SkipsUnresolvableSrcIdx(t *testing.T) {
 	for _, c := range got {
 		if c.SourceID == "" {
 			t.Errorf("citation with empty SourceID leaked through: %+v", c)
+		}
+	}
+}
+
+func TestExtractChatPayloadResolvesScopedCitationIDs(t *testing.T) {
+	sourceIDs := []string{"target-src"}
+	payload := []interface{}{
+		[]interface{}{"answer", nil, nil, nil, nil, nil, nil, nil, float64(1)},
+		[]interface{}{
+			[]interface{}{nil, nil, float64(0.9), nil, nil},
+		},
+		[]interface{}{
+			[]interface{}{
+				[]interface{}{nil, float64(0), float64(6)},
+				[]interface{}{float64(0)},
+			},
+		},
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	got := extractChatPayload(string(payloadJSON), sourceIDs)
+	if len(got.Citations) != 1 {
+		t.Fatalf("got %d citations, want 1: %+v", len(got.Citations), got.Citations)
+	}
+	if got.Citations[0].SourceID != "target-src" {
+		t.Fatalf("citation source = %q, want target-src", got.Citations[0].SourceID)
+	}
+}
+
+// TestParseChatResponseAuthError verifies that an expired-auth chat response —
+// HTTP 200 with an error frame and no content — surfaces ErrAuthExpired instead
+// of returning a silent empty answer.
+func TestParseChatResponseAuthError(t *testing.T) {
+	// gRPC-Web error frame: anti-XSSI prefix, a length line, then an array
+	// carrying the gRPC status code (16 = Unauthenticated). No "wrb.fr" frame.
+	stream := ")]}'\n\n26\n[[\"er\",null,null,null,null,16]]\n"
+
+	c := &Client{}
+	var emitted string
+	err := c.parseChatResponse(strings.NewReader(stream), func(chunk string) bool {
+		emitted += chunk
+		return true
+	})
+	if err == nil {
+		t.Fatal("parseChatResponse returned nil for an auth-error frame; want ErrAuthExpired")
+	}
+	if !errors.Is(err, ErrAuthExpired) {
+		t.Fatalf("error = %v, want errors.Is(ErrAuthExpired)", err)
+	}
+	if emitted != "" {
+		t.Fatalf("emitted %q, want no content on auth error", emitted)
+	}
+}
+
+// TestClassifyChatError covers the discriminator directly, especially the
+// no-false-positive requirement: ordinary empty answers and content that
+// merely contains digit runs (UUIDs, indices) must NOT be flagged.
+func TestClassifyChatError(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		wantErr bool
+	}{
+		{"empty", "", false},
+		{"whitespace", "  \n ", false},
+		{"auth16", `[["er",null,null,null,null,16]]`, true},
+		{"legacy_auth", `[277567]`, true},
+		{"uuid_no_false_positive", `[["wrb.fr","x","00000000-0000-4000-8000-000000000016"]]`, false},
+		{"index_glued_no_false_positive", `["abc16def"]`, false},
+		{"benign_number", `[["er",null,42]]`, false},
+	}
+	for _, tt := range tests {
+		err := classifyChatError(tt.body)
+		if tt.wantErr && err == nil {
+			t.Errorf("%s: classifyChatError(%q) = nil, want error", tt.name, tt.body)
+		}
+		if !tt.wantErr && err != nil {
+			t.Errorf("%s: classifyChatError(%q) = %v, want nil", tt.name, tt.body, err)
+		}
+	}
+}
+
+func TestScanIntTokens(t *testing.T) {
+	tests := []struct {
+		in   string
+		want []int
+	}{
+		{"16", []int{16}},
+		{"[16,277567]", []int{16, 277567}},
+		{"abc16", nil},  // glued to preceding word char
+		{"16abc", nil},  // glued to following word char
+		{"a1b2c3", nil}, // all glued
+		{"[1, 2, 3]", []int{1, 2, 3}},
+		{"00000000-0016-x", nil}, // hyphen-bordered, not JSON-delimited
+		{`"...000016"`, nil},     // UUID-like tail inside a quoted string
+	}
+	for _, tt := range tests {
+		got := scanIntTokens(tt.in)
+		if len(got) != len(tt.want) {
+			t.Errorf("scanIntTokens(%q) = %v, want %v", tt.in, got, tt.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != tt.want[i] {
+				t.Errorf("scanIntTokens(%q) = %v, want %v", tt.in, got, tt.want)
+				break
+			}
 		}
 	}
 }

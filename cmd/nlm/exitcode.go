@@ -71,6 +71,8 @@ func exitCodeFor(err error) int {
 
 	// Typed api-layer sentinels for states batchexecute cannot disambiguate.
 	switch {
+	case errors.Is(err, api.ErrAuthExpired):
+		return exitAuth
 	case errors.Is(err, api.ErrSourceCapReached),
 		errors.Is(err, api.ErrSourceTooLarge),
 		errors.Is(err, api.ErrNotebookCapReached):

@@ -207,6 +207,9 @@ func friendlyError(err error) string {
 			return strings.Join(parts, "\n")
 		}
 	}
+	if errors.Is(err, api.ErrAuthExpired) {
+		return friendlyTypedError(err, api.ErrAuthExpired, "authentication expired; run 'nlm auth' to re-authenticate")
+	}
 	if errors.Is(err, api.ErrSourceCapReached) {
 		return friendlyTypedError(err, api.ErrSourceCapReached, "notebook is at the source limit; remove unused sources before adding more")
 	}

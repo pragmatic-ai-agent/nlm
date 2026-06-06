@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -4210,11 +4211,13 @@ func (c *Client) parseChatResponse(r io.Reader, callback func(chunk string) bool
 		body = body[4:]
 	}
 	body = strings.TrimLeft(body, "\n")
+	rawBody := body
 
 	// Extract text from wrb.fr chunks
 	// Each chunk is: <length>\n<json-array>\n
 	// The json-array contains: ["wrb.fr", "service.Method", "<inner-json>", ...]
 	var lastText string
+	var sawFrame bool
 	for len(body) > 0 {
 		body = strings.TrimLeft(body, "\n ")
 
@@ -4228,6 +4231,9 @@ func (c *Client) parseChatResponse(r io.Reader, callback func(chunk string) bool
 		// Find the JSON array in this chunk
 		// Look for wrb.fr entries
 		startIdx := strings.Index(body, "[\"wrb.fr\"")
+		if startIdx >= 0 {
+			sawFrame = true
+		}
 		if startIdx < 0 {
 			// Try other envelope types like ["e", ...] and skip
 			nextNL := strings.Index(body, "\n")
@@ -4289,7 +4295,86 @@ func (c *Client) parseChatResponse(r io.Reader, callback func(chunk string) bool
 		}
 	}
 
+	// A response with no data frame and no extracted text is the silent-empty
+	// failure mode — most often expired auth, which the gRPC-Web chat endpoint
+	// reports as an HTTP 200 with an error frame instead of a content frame.
+	// Surface it as an error rather than returning an empty answer.
+	if !sawFrame && lastText == "" {
+		if err := classifyChatError(rawBody); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+// chatAuthErrorCodes are the batchexecute dictionary codes that mean the stored
+// session is no longer valid. They appear in the gRPC-Web chat error frame as a
+// bare integer, e.g. 16 (Unauthenticated) or the legacy 277566/277567.
+var chatAuthErrorCodes = map[int]bool{16: true, 277566: true, 277567: true}
+
+// classifyChatError inspects a chat response body that produced no content
+// frame and returns a typed error when it carries a recognizable failure
+// signal. It returns nil for a genuinely empty answer (no signature) so callers
+// do not turn an empty response into a spurious error.
+//
+// The gRPC-Web chat error frame is length-prefixed and wraps the gRPC status
+// code somewhere in a nested array, so the body does not parse cleanly as a
+// batchexecute response. We scan the integer tokens in the body for a known
+// auth code rather than assert an exact (uncaptured) frame shape; if an auth
+// code is present, expired auth is by far the most likely cause.
+func classifyChatError(rawBody string) error {
+	body := strings.TrimSpace(rawBody)
+	if body == "" {
+		return nil
+	}
+	for _, code := range scanIntTokens(body) {
+		if chatAuthErrorCodes[code] {
+			return fmt.Errorf("chat returned no content: %w (server signaled error code %d)", ErrAuthExpired, code)
+		}
+	}
+	return nil
+}
+
+// scanIntTokens returns the JSON-delimited integer literals in s — runs of
+// digits bounded on both sides by JSON structural punctuation (brackets,
+// commas, colons) or whitespace, or by the start/end of the string. The strict
+// boundary is deliberate: it excludes digits embedded in UUIDs, method names,
+// and hyphenated identifiers (e.g. the trailing "...000016" segment of a source
+// UUID), which would otherwise be false positives when scanning for error
+// codes inside an opaque wire frame.
+func scanIntTokens(s string) []int {
+	var out []int
+	for i := 0; i < len(s); {
+		if s[i] < '0' || s[i] > '9' {
+			i++
+			continue
+		}
+		j := i
+		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			j++
+		}
+		prevOK := i == 0 || isJSONBoundary(s[i-1])
+		nextOK := j == len(s) || isJSONBoundary(s[j])
+		if prevOK && nextOK {
+			if n, err := strconv.Atoi(s[i:j]); err == nil {
+				out = append(out, n)
+			}
+		}
+		i = j
+	}
+	return out
+}
+
+// isJSONBoundary reports whether b is JSON structural punctuation or whitespace
+// — i.e. a character that can legitimately border a standalone integer literal.
+func isJSONBoundary(b byte) bool {
+	switch b {
+	case '[', ']', '{', '}', ',', ':', ' ', '\t', '\n', '\r':
+		return true
+	default:
+		return false
+	}
 }
 
 // extractJSONArray extracts a balanced JSON array from the start of a string.
