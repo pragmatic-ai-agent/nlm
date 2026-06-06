@@ -86,6 +86,40 @@ func TestParseGenerateChatArgs(t *testing.T) {
 	}
 }
 
+func TestParseGenerateChatArgsPromptFile(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "long flag",
+			args: []string{"--prompt-file", "prompt.txt", "nb"},
+			want: "prompt.txt",
+		},
+		{
+			name: "short flag",
+			args: []string{"nb", "-f", "-"},
+			want: "-",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotPos, err := parseGenerateChatArgsWithOptions(tt.args, globalOptions{})
+			if err != nil {
+				t.Fatalf("parseGenerateChatArgs error = %v", err)
+			}
+			if got.PromptFile != tt.want {
+				t.Fatalf("prompt file = %q, want %q", got.PromptFile, tt.want)
+			}
+			if len(gotPos) != 1 || gotPos[0] != "nb" {
+				t.Fatalf("positional = %q, want [nb]", gotPos)
+			}
+		})
+	}
+}
+
 func TestParseChatArgs(t *testing.T) {
 	got, gotPos, err := parseChatArgsWithOptions([]string{
 		"nb",

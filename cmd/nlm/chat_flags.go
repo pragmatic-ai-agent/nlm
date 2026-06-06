@@ -21,6 +21,7 @@ type chatRenderOptions struct {
 type generateChatOptions struct {
 	ConversationID string
 	UseWebChat     bool
+	PromptFile     string
 	Selectors      selectorOptions
 	Render         chatRenderOptions
 }
@@ -78,10 +79,11 @@ func appendRenderFlags(flags *flag.FlagSet, opts *chatRenderOptions) {
 }
 
 func printGenerateChatUsage(cmdName string) {
-	fmt.Fprintf(os.Stderr, "Usage: nlm %s [flags] <notebook-id> <prompt>\n\n", cmdName)
+	fmt.Fprintf(os.Stderr, "Usage: nlm %s [flags] <notebook-id> [prompt]\n\n", cmdName)
 	fmt.Fprintln(os.Stderr, "Flags:")
 	fmt.Fprintln(os.Stderr, "  --conversation, -c <id>  Continue an existing conversation by ID")
 	fmt.Fprintln(os.Stderr, "  --web                    Use the most recent server-side conversation")
+	fmt.Fprintln(os.Stderr, "  --prompt-file, -f <path> Read the prompt from a file ('-' reads stdin)")
 	fmt.Fprintln(os.Stderr, "  --thinking, --reasoning  Show thinking headers while streaming")
 	fmt.Fprintln(os.Stderr, "  --verbose, -v            Show full thinking traces while streaming")
 	fmt.Fprintln(os.Stderr, "  --citations <mode>       Citation rendering: off|block|stream|tail|overlay|json")
@@ -95,6 +97,7 @@ func printGenerateChatUsage(cmdName string) {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Examples:")
 	fmt.Fprintf(os.Stderr, "  nlm %s <notebook-id> \"Summarize the architecture\"\n", cmdName)
+	fmt.Fprintf(os.Stderr, "  nlm %s --prompt-file prompt.txt <notebook-id>\n", cmdName)
 	fmt.Fprintf(os.Stderr, "  nlm %s --conversation <id> <notebook-id> \"Follow up on section 2\"\n", cmdName)
 }
 
@@ -103,11 +106,11 @@ func validateGenerateChatArgs(cmdName string, args []string) error {
 }
 
 func validateGenerateChatArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
-	_, positional, err := parseGenerateChatArgsWithOptions(args, globals)
-	if err == nil && len(positional) >= 2 {
+	opts, positional, err := parseGenerateChatArgsWithOptions(args, globals)
+	if err == nil && len(positional) >= 1 && (opts.PromptFile != "" || len(positional) >= 2) {
 		return nil
 	}
-	fmt.Fprintf(os.Stderr, "usage: nlm %s <notebook-id> <prompt>\n", cmdName)
+	fmt.Fprintf(os.Stderr, "usage: nlm %s <notebook-id> [prompt]\n", cmdName)
 	return errBadArgs
 }
 
@@ -119,6 +122,7 @@ func parseGenerateChatArgsWithOptions(args []string, globals globalOptions) (gen
 	opts := generateChatOptions{
 		ConversationID: globals.conversationID,
 		UseWebChat:     globals.useWebChat,
+		PromptFile:     globals.promptFile,
 		Selectors:      selectorOptionsFromGlobals(globals),
 		Render:         chatRenderOptionsFromGlobals(globals),
 	}
@@ -127,6 +131,8 @@ func parseGenerateChatArgsWithOptions(args []string, globals globalOptions) (gen
 	flags.StringVar(&opts.ConversationID, "conversation", opts.ConversationID, "")
 	flags.StringVar(&opts.ConversationID, "c", opts.ConversationID, "")
 	flags.BoolVar(&opts.UseWebChat, "web", opts.UseWebChat, "")
+	flags.StringVar(&opts.PromptFile, "prompt-file", opts.PromptFile, "")
+	flags.StringVar(&opts.PromptFile, "f", opts.PromptFile, "")
 	appendRenderFlags(flags, &opts.Render)
 	appendSelectorFlags(flags, &opts.Selectors)
 
@@ -134,6 +140,8 @@ func parseGenerateChatArgsWithOptions(args []string, globals globalOptions) (gen
 		"conversation":      true,
 		"c":                 true,
 		"web":               true,
+		"prompt-file":       true,
+		"f":                 true,
 		"thinking":          true,
 		"reasoning":         true,
 		"thinking-jsonl":    true,
@@ -162,8 +170,11 @@ func parseGenerateChatArgsWithOptions(args []string, globals globalOptions) (gen
 	if err := flags.Parse(flagArgs); err != nil {
 		return opts, nil, err
 	}
-	if len(positional) < 2 {
-		return opts, nil, fmt.Errorf("missing notebook id or prompt")
+	if len(positional) == 0 {
+		return opts, nil, fmt.Errorf("missing notebook id")
+	}
+	if opts.PromptFile == "" && len(positional) < 2 {
+		return opts, nil, fmt.Errorf("missing prompt")
 	}
 	return opts, positional, nil
 }
@@ -177,7 +188,14 @@ func runGenerateChatWithOptions(c *api.Client, args []string, globals globalOpti
 	if err != nil {
 		return err
 	}
-	return generateFreeFormChat(c, positional[0], strings.Join(positional[1:], " "), opts)
+	prompt := strings.Join(positional[1:], " ")
+	if opts.PromptFile != "" {
+		prompt, err = readPromptFile(opts.PromptFile)
+		if err != nil {
+			return fmt.Errorf("read prompt: %w", err)
+		}
+	}
+	return generateFreeFormChat(c, positional[0], prompt, opts)
 }
 
 func printChatUsage(cmdName string) {

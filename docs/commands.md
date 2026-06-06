@@ -22,7 +22,7 @@ Run `nlm <command> -h` for exact per-command usage.
 | `--experimental` | hidden commands | Enable experimental commands in help and execution |
 | `-y`, `--yes` | destructive commands | Skip confirmation prompts |
 | `--source-ids IDS`, `--source-match REGEX` | chat, report, transforms | Limit work to selected sources |
-| `--citations MODE`, `--thinking`, `--prompt-file PATH` | chat | Control streaming format and prompt input |
+| `--citations MODE`, `--thinking`, `--prompt-file PATH` | chat, generate-chat | Control streaming format and prompt input |
 | `--mode MODE`, `--md`, `--import` | research | Control research mode and output |
 
 ## Notebook

@@ -277,6 +277,7 @@ func TestCommandLocalHelp(t *testing.T) {
 			contains: []string{
 				"Usage: nlm generate-chat [flags]",
 				"--conversation, -c <id>",
+				"--prompt-file, -f <path>",
 				"--source-match <regex>",
 			},
 		},
