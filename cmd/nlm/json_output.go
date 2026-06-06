@@ -55,6 +55,7 @@ type artifactListRecord struct {
 	ArtifactID  string `json:"artifact_id"`
 	Type        string `json:"type"`
 	State       string `json:"state"`
+	StateCode   int32  `json:"state_code"`
 	SourceCount int    `json:"source_count"`
 }
 

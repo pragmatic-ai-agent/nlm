@@ -1690,7 +1690,14 @@ func getArtifact(c *api.Client, artifactID string) error {
 	fmt.Printf("Artifact: %s\n", artifact.ArtifactId)
 	fmt.Printf("Project:  %s\n", artifact.ProjectId)
 	fmt.Printf("Type:     %s\n", artifact.Type.String())
-	fmt.Printf("State:    %s\n", artifact.State.String())
+	// Print the raw state code alongside the enum name. The state position in
+	// the gArtLc wire response is observed but not HAR-pinned, so exposing the
+	// integer lets callers distinguish a genuine FAILED (3) from an unparsed
+	// state (0/UNSPECIFIED) without --debug.
+	fmt.Printf("State:    %s (%d)\n", artifact.State.String(), artifact.State.Number())
+	if artifact.State == pb.ArtifactState_ARTIFACT_STATE_FAILED {
+		fmt.Fprintln(os.Stderr, "note: artifact reports FAILED. Run with --debug to see the raw artifact record.")
+	}
 
 	if len(artifact.Sources) > 0 {
 		fmt.Printf("Sources:  %d\n", len(artifact.Sources))
@@ -1765,6 +1772,7 @@ func displayArtifacts(artifacts []*pb.Artifact) error {
 				ArtifactID:  artifact.ArtifactId,
 				Type:        artifact.Type.String(),
 				State:       artifact.State.String(),
+				StateCode:   int32(artifact.State.Number()),
 				SourceCount: len(artifact.Sources),
 			}
 			if err := enc.Encode(rec); err != nil {
