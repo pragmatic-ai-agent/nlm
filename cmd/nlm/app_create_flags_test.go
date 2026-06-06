@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/tmc/nlm/internal/notebooklm/api"
+)
 
 func TestParseAppCreateArgsWithOptions(t *testing.T) {
 	t.Parallel()
@@ -41,6 +45,80 @@ func TestParseAppCreateArgsUsesPositionalInstructions(t *testing.T) {
 	}
 	if len(positional) != 1 || positional[0] != "nb-1" {
 		t.Fatalf("positional = %v, want [nb-1]", positional)
+	}
+}
+
+func TestParseSlideDeckFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		in      string
+		want    api.SlideDeckFormat
+		wantErr bool
+	}{
+		{"", api.SlideDeckFormatDetailed, false},
+		{"detailed", api.SlideDeckFormatDetailed, false},
+		{"DETAILED", api.SlideDeckFormatDetailed, false},
+		{"detail", api.SlideDeckFormatDetailed, false},
+		{"presenter", api.SlideDeckFormatPresenter, false},
+		{" Presenter ", api.SlideDeckFormatPresenter, false},
+		{"sparse", api.SlideDeckFormatPresenter, false},
+		{"bogus", 0, true},
+	}
+	for _, tt := range tests {
+		got, err := parseSlideDeckFormat(tt.in)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("parseSlideDeckFormat(%q) = %v, want error", tt.in, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("parseSlideDeckFormat(%q): %v", tt.in, err)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("parseSlideDeckFormat(%q) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestParseSlidesCreateArgs(t *testing.T) {
+	t.Parallel()
+
+	// Flags before and after the positional notebook id; instructions optional.
+	opts, positional, err := parseSlidesCreateArgs([]string{
+		"--format", "presenter",
+		"nb-1",
+		"focus", "on", "the", "results",
+		"--source-match", "^spec/",
+	}, globalOptions{})
+	if err != nil {
+		t.Fatalf("parseSlidesCreateArgs: %v", err)
+	}
+	if opts.Format != "presenter" {
+		t.Fatalf("format = %q, want presenter", opts.Format)
+	}
+	if opts.Selectors.SourceMatch != "^spec/" {
+		t.Fatalf("source-match = %q, want ^spec/", opts.Selectors.SourceMatch)
+	}
+	if len(positional) != 5 || positional[0] != "nb-1" {
+		t.Fatalf("positional = %v, want [nb-1 focus on the results]", positional)
+	}
+
+	// Notebook id alone (no instructions, no format) is valid.
+	if _, _, err := parseSlidesCreateArgs([]string{"nb-1"}, globalOptions{}); err != nil {
+		t.Fatalf("parseSlidesCreateArgs(nb only): %v", err)
+	}
+
+	// Missing notebook id is an error.
+	if _, _, err := parseSlidesCreateArgs([]string{"--format", "detailed"}, globalOptions{}); err == nil {
+		t.Fatal("parseSlidesCreateArgs with no notebook id: want error")
+	}
+
+	// Invalid format is rejected at parse time.
+	if _, _, err := parseSlidesCreateArgs([]string{"--format", "bogus", "nb-1"}, globalOptions{}); err == nil {
+		t.Fatal("parseSlidesCreateArgs with bad format: want error")
 	}
 }
 

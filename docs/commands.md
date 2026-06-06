@@ -114,6 +114,7 @@ labels yourself.
 | `nlm create-audio NOTEBOOK_ID "Conversational summary"` | Create an audio overview |
 | `nlm create-video NOTEBOOK_ID "Whiteboard walkthrough"` | Create a video overview |
 | `nlm create-slides NOTEBOOK_ID "Presentation summary"` | Create a slide deck |
+| `nlm create-slides --format presenter NOTEBOOK_ID "Talk-along deck"` | Create a sparse presenter deck (experimental) |
 | `nlm app-create --type mindmap NOTEBOOK_ID "Focus on architecture"` | Create a generated app artifact |
 | `nlm app create --type prototype NOTEBOOK_ID "Build a study app"` | Create a generated app artifact |
 | `nlm mindmap-create NOTEBOOK_ID "Focus on architecture"` | Create a generated mind map artifact |
@@ -144,7 +145,15 @@ labels yourself.
 | Command | Description |
 |---------|-------------|
 | `nlm deck create NOTEBOOK_ID "Presentation summary"` | Create a slide deck |
+| `nlm deck create --format presenter NOTEBOOK_ID "Talk-along deck"` | Create a sparse presenter deck (experimental) |
+| `nlm deck create --source-match '^spec/' NOTEBOOK_ID` | Create a deck from a subset of sources |
 | `nlm deck download NOTEBOOK_ID --id ARTIFACT_ID --format pptx --output deck.pptx` | Print the browser URL for slide deck download |
+
+`deck create` / `create-slides` accept `--format detailed|presenter` (detailed is the
+default; presenter is experimental — its wire encoding is not yet HAR-verified) and the
+standard source selectors (`--source-ids`, `--source-match`, `--source-exclude`,
+`--label-ids`, `--label-match`, `--label-exclude`). When no selector is given, every
+source in the notebook is used. Instructions are optional.
 
 ## Artifact
 

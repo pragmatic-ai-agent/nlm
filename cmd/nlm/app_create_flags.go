@@ -29,6 +29,12 @@ type videoCreateOptions struct {
 	AudioType string
 }
 
+type slidesCreateOptions struct {
+	Format     string
+	DeckFormat api.SlideDeckFormat
+	Selectors  selectorOptions
+}
+
 func appCreateCommandLocalFlags() map[string]bool {
 	flags := selectorCommandLocalFlags()
 	flags["type"] = true
@@ -46,6 +52,13 @@ func videoCreateCommandLocalFlags() map[string]bool {
 	return map[string]bool{
 		"style": true, "language": true, "audio-type": true,
 	}
+}
+
+func slidesCreateCommandLocalFlags() map[string]bool {
+	flags := selectorCommandLocalFlags()
+	flags["format"] = true
+	flags["f"] = true
+	return flags
 }
 
 func printAppCreateUsage(cmdName string) {
@@ -70,6 +83,16 @@ func printVideoCreateUsage(cmdName string) {
 	fmt.Fprintln(os.Stderr, "  --style <value>          Video style: auto, classic, or whiteboard")
 	fmt.Fprintln(os.Stderr, "  --language <code>        Language code (default en)")
 	fmt.Fprintln(os.Stderr, "  --audio-type <value>     Content style: brief, deep-dive, critique, or debate")
+}
+
+func printSlidesCreateUsage(cmdName string) {
+	fmt.Fprintf(os.Stderr, "Usage: nlm %s [flags] <notebook-id> [instructions]\n\n", cmdName)
+	fmt.Fprintln(os.Stderr, "Flags:")
+	fmt.Fprintln(os.Stderr, "  --format, -f <value>     Deck format: detailed (default) or presenter")
+	fmt.Fprintln(os.Stderr, "                           presenter is experimental (wire values not yet HAR-verified)")
+	printSelectorFlags()
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "When no source selector is given, every source in the notebook is used.")
 }
 
 func printSelectorFlags() {
@@ -213,6 +236,85 @@ func parseVideoCreateArgs(args []string) (videoCreateOptions, []string, error) {
 		return opts, nil, fmt.Errorf("missing notebook id or instructions")
 	}
 	return opts, positional, nil
+}
+
+func validateSlidesCreateArgsWithOptions(cmdName string, args []string, globals globalOptions) error {
+	_, _, err := parseSlidesCreateArgs(args, globals)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "usage: nlm %s [--format detailed|presenter] [selectors] <notebook-id> [instructions]\n", cmdName)
+		return errBadArgs
+	}
+	return nil
+}
+
+// parseSlidesCreateArgs parses create-slides / deck create flags. It returns
+// the create options and the positional args (notebook-id first, then any
+// instruction words). Instructions are optional — a deck can be generated from
+// sources alone.
+func parseSlidesCreateArgs(args []string, globals globalOptions) (slidesCreateOptions, []string, error) {
+	opts := slidesCreateOptions{Selectors: selectorOptionsFromGlobals(globals)}
+	flags := flag.NewFlagSet("slides-create", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&opts.Format, "format", opts.Format, "")
+	flags.StringVar(&opts.Format, "f", opts.Format, "")
+	flags.StringVar(&opts.Selectors.SourceIDs, "source-ids", opts.Selectors.SourceIDs, "")
+	flags.StringVar(&opts.Selectors.SourceMatch, "source-match", opts.Selectors.SourceMatch, "")
+	flags.StringVar(&opts.Selectors.SourceExclude, "source-exclude", opts.Selectors.SourceExclude, "")
+	flags.StringVar(&opts.Selectors.LabelIDs, "label-ids", opts.Selectors.LabelIDs, "")
+	flags.StringVar(&opts.Selectors.LabelMatch, "label-match", opts.Selectors.LabelMatch, "")
+	flags.StringVar(&opts.Selectors.LabelExclude, "label-exclude", opts.Selectors.LabelExclude, "")
+
+	flagArgs, positional, err := splitCommandFlags(args, slidesCreateCommandLocalFlags(), nil)
+	if err != nil {
+		return opts, nil, err
+	}
+	if err := flags.Parse(flagArgs); err != nil {
+		return opts, nil, err
+	}
+	opts.DeckFormat, err = parseSlideDeckFormat(opts.Format)
+	if err != nil {
+		return opts, nil, err
+	}
+	if len(positional) == 0 {
+		return opts, nil, fmt.Errorf("missing notebook id")
+	}
+	return opts, positional, nil
+}
+
+func parseSlideDeckFormat(s string) (api.SlideDeckFormat, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "detailed", "detail", "handout":
+		return api.SlideDeckFormatDetailed, nil
+	case "presenter", "present", "sparse":
+		return api.SlideDeckFormatPresenter, nil
+	default:
+		return 0, fmt.Errorf("unknown slide deck format %q (want detailed or presenter)", s)
+	}
+}
+
+func runSlidesCreateWithOptions(c *api.Client, args []string, globals globalOptions) error {
+	opts, positional, err := parseSlidesCreateArgs(args, globals)
+	if err != nil {
+		return err
+	}
+	notebookID := positional[0]
+	instructions := strings.Join(positional[1:], " ")
+
+	var sourceIDs []string
+	if !opts.Selectors.empty() {
+		sourceIDs, err = resolveSourceSelectorsWithOptions(c, notebookID, opts.Selectors)
+		if err != nil {
+			return err
+		}
+	}
+
+	artifactID, err := c.CreateSlideDeckWithOptions(notebookID, instructions, sourceIDs, opts.DeckFormat)
+	if err != nil {
+		return err
+	}
+	fmt.Println(artifactID)
+	fmt.Fprintf(os.Stderr, "Created slide deck. Use 'nlm artifact get %s' to check status.\n", artifactID)
+	return nil
 }
 
 func parseAudioLength(s string) (pb.AudioLength, error) {

@@ -3304,23 +3304,42 @@ func (c *Client) GuidebookAsk(guidebookID, question string) (*pb.GuidebookGenera
 
 // Slide deck operations
 
+// SlideDeckFormat selects the deck layout NotebookLM generates. The
+// presenter format is experimental; see intmethod.SlideDeckFormat.
+type SlideDeckFormat = intmethod.SlideDeckFormat
+
+const (
+	SlideDeckFormatDetailed  = intmethod.SlideDeckFormatDetailed
+	SlideDeckFormatPresenter = intmethod.SlideDeckFormatPresenter
+)
+
+// CreateSlideDeck generates a detailed slide deck from every source in the
+// notebook. It is a convenience wrapper over CreateSlideDeckWithOptions.
 func (c *Client) CreateSlideDeck(projectID, instructions string) (string, error) {
-	// Fetch sources for the notebook
-	project, err := c.GetProject(projectID)
-	if err != nil {
-		return "", fmt.Errorf("get project sources: %w", err)
-	}
-	var sourceIDs []string
-	for _, src := range project.Sources {
-		if src.SourceId != nil {
-			sourceIDs = append(sourceIDs, src.SourceId.SourceId)
+	return c.CreateSlideDeckWithOptions(projectID, instructions, nil, SlideDeckFormatDetailed)
+}
+
+// CreateSlideDeckWithOptions generates a slide deck in the given format. When
+// sourceIDs is empty, every source in the notebook is used; otherwise only the
+// listed sources are included. An empty sourceIDs slice after expansion (a
+// notebook with no sources) is an error.
+func (c *Client) CreateSlideDeckWithOptions(projectID, instructions string, sourceIDs []string, format SlideDeckFormat) (string, error) {
+	if len(sourceIDs) == 0 {
+		project, err := c.GetProject(projectID)
+		if err != nil {
+			return "", fmt.Errorf("get project sources: %w", err)
+		}
+		for _, src := range project.Sources {
+			if src.SourceId != nil {
+				sourceIDs = append(sourceIDs, src.SourceId.SourceId)
+			}
 		}
 	}
 	if len(sourceIDs) == 0 {
 		return "", fmt.Errorf("notebook has no sources")
 	}
 
-	args := intmethod.EncodeCreateSlideDeckArgs(projectID, sourceIDs, instructions, "en")
+	args := intmethod.EncodeCreateSlideDeckArgs(projectID, sourceIDs, instructions, "en", format)
 	call := rpc.Call{
 		ID:         "R7cb6c",
 		NotebookID: projectID,
@@ -3984,6 +4003,9 @@ func (c *Client) doChatStreamed(req ChatRequest, callback func(chunk string) boo
 
 // doChatStreamedChunked sends a chat request and streams phase-aware ChatChunks via callback.
 func (c *Client) doChatStreamedChunked(req ChatRequest, callback func(ChatChunk) bool) error {
+	sourceIDs := c.resolveSourceIDs(req.ProjectID, req.SourceIDs)
+	req.SourceIDs = sourceIDs
+
 	body, err := c.buildChatRequestBody(req)
 	if err != nil {
 		return err
@@ -4019,13 +4041,6 @@ func (c *Client) doChatStreamedChunked(req ChatRequest, callback func(ChatChunk)
 	idleBody := newIdleTimeoutReader(resp.Body, 120*time.Second)
 	defer idleBody.Close()
 
-	// Citation srcIdx values index into the project's full source list,
-	// not the (possibly narrowed) set we sent in req.SourceIDs. Always
-	// expand to the full project sources so we can resolve every slot
-	// the model emits — without this, a chat using --source-ids would
-	// drop any citation referencing a project source outside that
-	// subset.
-	sourceIDs := c.resolveSourceIDs(req.ProjectID, nil)
 	return c.parseChatResponseChunked(idleBody, sourceIDs, callback)
 }
 
@@ -4418,7 +4433,7 @@ func debugDumpChatWirePositions(innerJSON string) {
 // citationData[0] / mappingData[0], regardless of which project source that
 // slot happens to reference. SourceIndex therefore carries the slot number
 // (1-based), and SourceID carries the resolved project source behind it.
-// sourceIDs is the source-id list from the original ChatRequest, used to
+// sourceIDs is the source-id list sent in the original ChatRequest, used to
 // turn per-slot srcIndices into stable identifiers.
 func parseCitationsV2(citationData, mappingData interface{}, sourceIDs []string) []Citation {
 	mapArr, _ := mappingData.([]interface{})
@@ -4472,10 +4487,8 @@ func parseCitationsV2(citationData, mappingData interface{}, sourceIDs []string)
 			if v, ok := idx.(float64); ok {
 				srcIdx = int(v)
 			}
-			// Skip srcIdx values we can't resolve to a project source.
-			// Observed when the request narrowed --source-ids and the
-			// server still returned a slot indexing past that subset:
-			// emitting a Citation with an empty SourceID would just
+			// Skip srcIdx values we can't resolve in the request's source
+			// list. Emitting a Citation with an empty SourceID would just
 			// render as a blank footer line nobody can act on.
 			if srcIdx < 0 || srcIdx >= len(sourceIDs) {
 				continue
@@ -4776,7 +4789,7 @@ func (c *Client) GetProjectWithContext(ctx context.Context, projectID string) (*
 
 	project, err := c.orchestrationService.GetProject(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("get project: %w", err)
+		return nil, fmt.Errorf("get project: %w", classifyGetProjectError(projectID, err))
 	}
 
 	if c.config.Debug && project.Sources != nil {

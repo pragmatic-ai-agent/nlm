@@ -337,6 +337,8 @@ var commandLocalFlags = map[string]map[string]bool{
 	"audio create":    audioCreateCommandLocalFlags(),
 	"create-video":    videoCreateCommandLocalFlags(),
 	"video create":    videoCreateCommandLocalFlags(),
+	"create-slides":   slidesCreateCommandLocalFlags(),
+	"deck create":     slidesCreateCommandLocalFlags(),
 	"create-report":   selectorCommandLocalFlags(),
 	"generate-report": reportCommandLocalFlags(),
 	"research": {

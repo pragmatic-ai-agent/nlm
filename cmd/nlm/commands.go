@@ -85,17 +85,6 @@ func cloneCommandInSection(base command, name, section string) command {
 	return base
 }
 
-func runCreateSlideDeck(c *api.Client, args []string) error {
-	instructions := strings.Join(args[1:], " ")
-	artifactID, err := c.CreateSlideDeck(args[0], instructions)
-	if err != nil {
-		return err
-	}
-	fmt.Println(artifactID)
-	fmt.Fprintf(os.Stderr, "Created slide deck. Use 'nlm artifact list %s' to check status.\n", args[0])
-	return nil
-}
-
 func groupedCommandsFromExisting(existing []command) []command {
 	byName := make(map[string]command, len(existing))
 	for _, cmd := range existing {
@@ -595,10 +584,17 @@ var commands = []command{
 		},
 	},
 	{
-		name: "create-slides", argsUsage: "<notebook-id> <instructions>",
+		name: "create-slides", argsUsage: "[--format detailed|presenter] [selectors] <notebook-id> [instructions]",
 		usage: "Create slide deck", section: "Create",
-		minArgs: 2, maxArgs: -1,
-		run: func(c *api.Client, args []string) error { return runCreateSlideDeck(c, args) },
+		minArgs: 1, maxArgs: -1,
+		validateWithOptions: validateSlidesCreateArgsWithOptions,
+		help:                printSlidesCreateUsage,
+		run: func(c *api.Client, args []string) error {
+			return runSlidesCreateWithOptions(c, args, packageGlobalOptions())
+		},
+		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
+			return runSlidesCreateWithOptions(c, args, opts)
+		},
 	},
 	{
 		name:      "deck-download",

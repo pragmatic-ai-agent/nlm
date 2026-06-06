@@ -65,10 +65,43 @@ func EncodeCreateAudioOverviewArgs(req *notebooklmv1alpha1.CreateAudioOverviewRe
 	}
 }
 
+// SlideDeckFormat selects the slide-deck layout NotebookLM generates.
+//
+// The R7cb6c slide config is [instructions, language, format, length]. Only the
+// default capture (format=1, length=3) is HAR-verified; the format/length
+// integers below are inferred from that single capture and the web UI's two
+// deck choices, so the non-default values are EXPERIMENTAL until a presenter
+// HAR is captured. Detailed is the verified default.
+type SlideDeckFormat int32
+
+const (
+	// SlideDeckFormatDetailed is the dense, standalone-handout deck. This is
+	// the HAR-verified default (format=1, length=3).
+	SlideDeckFormatDetailed SlideDeckFormat = iota
+	// SlideDeckFormatPresenter is the sparse, talk-along deck (fewer slides,
+	// one idea per slide). EXPERIMENTAL: wire values not yet HAR-verified.
+	SlideDeckFormatPresenter
+)
+
+// slideConfig returns the trailing [format, length] integers for the deck
+// format. Detailed reproduces the verified default exactly; presenter is a
+// best-effort guess pending a captured presenter request.
+func (f SlideDeckFormat) slideConfig() (format, length int) {
+	switch f {
+	case SlideDeckFormatPresenter:
+		return 2, 1
+	default:
+		return 1, 3
+	}
+}
+
 // EncodeCreateSlideDeckArgs encodes the observed R7cb6c slide-deck payload.
-func EncodeCreateSlideDeckArgs(projectID string, sourceIDs []string, instructions, language string) []interface{} {
+func EncodeCreateSlideDeckArgs(projectID string, sourceIDs []string, instructions, language string, format SlideDeckFormat) []interface{} {
 	// Wire format verified against HAR capture (2026-04-14) — do not regenerate.
+	// The default (SlideDeckFormatDetailed) reproduces the capture exactly;
+	// see SlideDeckFormat for the experimental presenter encoding.
 	sourceRefs := encodeOverviewSourceRefs(sourceIDs)
+	fmtCode, lenCode := format.slideConfig()
 	return []interface{}{
 		artifactTypeDescriptor,
 		projectID,
@@ -78,7 +111,7 @@ func EncodeCreateSlideDeckArgs(projectID string, sourceIDs []string, instruction
 			8, // artifact type 8 = slide deck
 			sourceRefs,
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-			[]interface{}{[]interface{}{instructions, language, 1, 3}},
+			[]interface{}{[]interface{}{instructions, language, fmtCode, lenCode}},
 		},
 	}
 }

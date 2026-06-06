@@ -110,6 +110,7 @@ func TestEncodeCreateSlideDeckArgs(t *testing.T) {
 		sourceIDs    []string
 		instructions string
 		language     string
+		format       SlideDeckFormat
 		fixtureFile  string
 		knownDiffs   []string
 	}{
@@ -119,6 +120,7 @@ func TestEncodeCreateSlideDeckArgs(t *testing.T) {
 			sourceIDs:    harSourceIDs,
 			instructions: "",
 			language:     "en",
+			format:       SlideDeckFormatDetailed,
 			fixtureFile:  "testdata/r7cb6c_slides_request.json",
 			// HAR sends [null,"en",1,3]; encoder sends ["","en",1,3].
 			// Empty instructions vs null — server accepts both.
@@ -129,7 +131,7 @@ func TestEncodeCreateSlideDeckArgs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got := EncodeCreateSlideDeckArgs(tt.projectID, tt.sourceIDs, tt.instructions, tt.language)
+			got := EncodeCreateSlideDeckArgs(tt.projectID, tt.sourceIDs, tt.instructions, tt.language, tt.format)
 			gotJSON := mustMarshal(t, got)
 
 			wantJSON := mustReadFixture(t, tt.fixtureFile)
@@ -140,6 +142,27 @@ func TestEncodeCreateSlideDeckArgs(t *testing.T) {
 
 			assertJSONStructure(t, gotVal, wantVal, tt.knownDiffs, "")
 		})
+	}
+}
+
+// TestSlideDeckFormatConfig pins the trailing [format, length] integers for
+// each deck format. Detailed is HAR-verified (1,3); presenter is experimental.
+func TestSlideDeckFormatConfig(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		format     SlideDeckFormat
+		wantFormat int
+		wantLength int
+	}{
+		{SlideDeckFormatDetailed, 1, 3},
+		{SlideDeckFormatPresenter, 2, 1},
+	}
+	for _, tt := range tests {
+		gotFormat, gotLength := tt.format.slideConfig()
+		if gotFormat != tt.wantFormat || gotLength != tt.wantLength {
+			t.Errorf("format %d: slideConfig() = (%d,%d), want (%d,%d)",
+				tt.format, gotFormat, gotLength, tt.wantFormat, tt.wantLength)
+		}
 	}
 }
 
