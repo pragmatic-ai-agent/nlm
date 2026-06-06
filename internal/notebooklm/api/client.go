@@ -3026,6 +3026,29 @@ func (c *Client) getArtifactDirect(artifactID string) (*pb.Artifact, error) {
 	return artifact, nil
 }
 
+// GetArtifactDownloadURLs returns the rendered-output download URLs for an
+// artifact (e.g. a slide deck's .pdf and .pptx links), or nil when the
+// artifact has none yet (still generating) or the direct RPC is unavailable on
+// this account. It uses the v9rmvd direct fetch, whose payload carries the
+// links; the gArtLc list scan does not include them.
+func (c *Client) GetArtifactDownloadURLs(artifactID string) ([]string, error) {
+	resp, err := c.rpc.Do(rpc.Call{
+		ID:   rpc.RPCGetArtifact,
+		Args: []interface{}{artifactID},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var responseData []interface{}
+	if err := json.Unmarshal(resp, &responseData); err != nil {
+		return nil, err
+	}
+	if len(responseData) == 0 {
+		return nil, nil
+	}
+	return extractArtifactDownloadURLs(responseData[0]), nil
+}
+
 // DeleteArtifact deletes an artifact by ID using the V5N4be RPC.
 //
 // Wire format verified against HAR capture 2026-04-07 — see
@@ -3199,7 +3222,52 @@ func (c *Client) parseArtifactFromResponse(data interface{}) *pb.Artifact {
 		})
 	}
 
+	// A finished artifact carries its rendered output as download URLs deep in
+	// the payload (e.g. a slide deck's .pdf / .pptx links). Their presence is
+	// authoritative proof the artifact is READY, independent of the state code
+	// at [4] — which for slide decks is observed to hold 3 (the same value our
+	// ArtifactState enum assigns to FAILED) on fully-rendered decks. Trust the
+	// output over the ambiguous code so a completed deck is never reported as
+	// failed. HAR-verified against a v9rmvd slide-deck payload (2026-06-06).
+	if hasArtifactDownloadURL(artifactData) {
+		artifact.State = pb.ArtifactState_ARTIFACT_STATE_READY
+	}
+
 	return artifact
+}
+
+// artifactDownloadURLPrefix is the host+path that fronts every rendered
+// artifact download (slide-deck .pdf/.pptx, etc.).
+const artifactDownloadURLPrefix = "https://contribution.usercontent.google.com/download"
+
+// extractArtifactDownloadURLs walks an artifact's decoded payload and returns
+// every rendered-output download URL it contains, in document order. Used both
+// to prove completion and to surface the file links to the user.
+func extractArtifactDownloadURLs(data interface{}) []string {
+	var out []string
+	seen := make(map[string]bool)
+	var walk func(v interface{})
+	walk = func(v interface{}) {
+		switch t := v.(type) {
+		case string:
+			if strings.HasPrefix(t, artifactDownloadURLPrefix) && !seen[t] {
+				seen[t] = true
+				out = append(out, t)
+			}
+		case []interface{}:
+			for _, e := range t {
+				walk(e)
+			}
+		}
+	}
+	walk(data)
+	return out
+}
+
+// hasArtifactDownloadURL reports whether the payload contains at least one
+// rendered-output download URL.
+func hasArtifactDownloadURL(data interface{}) bool {
+	return len(extractArtifactDownloadURLs(data)) > 0
 }
 
 func parseArtifactSourceIDs(artifactData []interface{}) []string {

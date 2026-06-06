@@ -1,10 +1,13 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
+	pb "github.com/tmc/nlm/gen/notebooklm/v1alpha1"
 	"github.com/tmc/nlm/internal/batchexecute"
 )
 
@@ -85,6 +88,84 @@ func TestParseArtifactsResponseUsesObservedFieldPositions(t *testing.T) {
 	if got := artifacts[1].GetSources()[0].GetSourceId().GetSourceId(); got != "src-3" {
 		t.Fatalf("artifacts[1].source = %q, want %q", got, "src-3")
 	}
+}
+
+// TestParseArtifactCompletedDeckNotFailed locks in the fix for slide decks
+// being mislabeled FAILED. A fully-rendered deck's payload holds 3 at the
+// state position [4] — the same value our enum assigns to FAILED — yet carries
+// .pdf/.pptx download URLs proving it is done. The parser must trust the output
+// URLs and report READY. Fixture is a real v9rmvd slide-deck payload.
+func TestParseArtifactCompletedDeckNotFailed(t *testing.T) {
+	client := &Client{}
+	raw := mustReadAPIFixture(t, "testdata/v9rmvd_slide_artifact.json")
+
+	var artifactData interface{}
+	if err := json.Unmarshal(raw, &artifactData); err != nil {
+		t.Fatalf("unmarshal fixture: %v", err)
+	}
+
+	// Sanity: the raw state int really is 3 (would map to FAILED) before the fix.
+	arr := artifactData.([]interface{})
+	if got, _ := int32At(arr, 4); got != 3 {
+		t.Fatalf("fixture state[4] = %d, want 3 (the FAILED-valued code on a completed deck)", got)
+	}
+
+	artifact := client.parseArtifactFromResponse(artifactData)
+	if artifact == nil {
+		t.Fatal("parseArtifactFromResponse returned nil")
+	}
+	if artifact.GetState() != pb.ArtifactState_ARTIFACT_STATE_READY {
+		t.Fatalf("state = %s (%d), want ARTIFACT_STATE_READY — completed deck with download URLs",
+			artifact.GetState(), int32(artifact.GetState()))
+	}
+
+	urls := extractArtifactDownloadURLs(artifactData)
+	if len(urls) != 2 {
+		t.Fatalf("download URLs = %d, want 2 (.pdf and .pptx): %v", len(urls), urls)
+	}
+	var pdf, pptx bool
+	for _, u := range urls {
+		if !strings.HasPrefix(u, artifactDownloadURLPrefix) {
+			t.Errorf("download URL missing expected prefix: %s", u)
+		}
+		if strings.Contains(u, ".pdf") {
+			pdf = true
+		}
+		if strings.Contains(u, ".pptx") {
+			pptx = true
+		}
+	}
+	if !pdf || !pptx {
+		t.Fatalf("expected both .pdf and .pptx URLs; got pdf=%v pptx=%v", pdf, pptx)
+	}
+}
+
+// TestExtractArtifactDownloadURLsNoFalsePositive verifies that an artifact
+// without rendered output yields no URLs and keeps its raw state.
+func TestExtractArtifactDownloadURLsNoFalsePositive(t *testing.T) {
+	client := &Client{}
+	// A still-generating deck: state 1 (CREATING), no download URLs anywhere.
+	resp := []byte(`[["artifact-x","Pending Deck",8,[[["src-1"]]],1,null,"https://example.com/not-a-download"]]`)
+	var data []interface{}
+	if err := json.Unmarshal(resp, &data); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	artifact := client.parseArtifactFromResponse(data[0])
+	if artifact.GetState() != pb.ArtifactState_ARTIFACT_STATE_CREATING {
+		t.Fatalf("state = %s, want CREATING (no download URLs, must not be overridden)", artifact.GetState())
+	}
+	if urls := extractArtifactDownloadURLs(data[0]); len(urls) != 0 {
+		t.Fatalf("expected no download URLs, got %v", urls)
+	}
+}
+
+func mustReadAPIFixture(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", path, err)
+	}
+	return b
 }
 
 func TestVideoOverviewResultFromArtifactData(t *testing.T) {

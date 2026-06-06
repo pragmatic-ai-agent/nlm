@@ -1702,6 +1702,16 @@ func getArtifact(c *api.Client, artifactID string) error {
 		fmt.Fprintln(os.Stderr, "note: artifact reports FAILED. Run with --debug to see the raw artifact record.")
 	}
 
+	// Surface rendered-output download links (e.g. a slide deck's .pdf/.pptx).
+	// These come from the direct-RPC payload; absence is not an error (the
+	// artifact may still be generating, or the account lacks the direct RPC).
+	if urls, err := c.GetArtifactDownloadURLs(artifactID); err == nil && len(urls) > 0 {
+		fmt.Println("Downloads:")
+		for _, u := range urls {
+			fmt.Printf("  %s\n", u)
+		}
+	}
+
 	if len(artifact.Sources) > 0 {
 		fmt.Printf("Sources:  %d\n", len(artifact.Sources))
 		for _, src := range artifact.Sources {
