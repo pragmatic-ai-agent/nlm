@@ -5047,7 +5047,11 @@ func extractYouTubeVideoID(urlStr string) (string, error) {
 
 	host := strings.ToLower(u.Hostname())
 	if host == "youtu.be" {
-		return strings.TrimPrefix(u.Path, "/"), nil
+		id := strings.TrimPrefix(u.Path, "/")
+		if strings.Contains(id, "/") {
+			return "", fmt.Errorf("unsupported YouTube URL format")
+		}
+		return id, nil
 	}
 
 	if (host == "youtube.com" || strings.HasSuffix(host, ".youtube.com")) && u.Path == "/watch" {
@@ -5063,19 +5067,24 @@ func normalizeYouTubeSourceURL(input string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("invalid YouTube URL: %w", err)
 		}
-		if videoID == "" {
-			return "", fmt.Errorf("invalid YouTube URL: missing video ID")
+		sourceURL, err := canonicalYouTubeWatchURL(videoID)
+		if err != nil {
+			return "", fmt.Errorf("invalid YouTube URL: %w", err)
 		}
-		return input, nil
+		return sourceURL, nil
 	}
 
-	if input == "" {
+	return canonicalYouTubeWatchURL(input)
+}
+
+func canonicalYouTubeWatchURL(videoID string) (string, error) {
+	if videoID == "" {
 		return "", fmt.Errorf("invalid YouTube video ID: empty")
 	}
-	if strings.ContainsAny(input, "/?&= ") {
-		return "", fmt.Errorf("invalid YouTube video ID: %q", input)
+	if strings.ContainsAny(videoID, "/?&= ") {
+		return "", fmt.Errorf("invalid YouTube video ID: %q", videoID)
 	}
-	return "https://www.youtube.com/watch?v=" + input, nil
+	return "https://www.youtube.com/watch?v=" + videoID, nil
 }
 
 // SetInstructions sets the notebook's custom chat instructions (system prompt).

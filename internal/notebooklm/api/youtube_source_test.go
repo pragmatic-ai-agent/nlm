@@ -15,14 +15,19 @@ func TestNormalizeYouTubeSourceURL(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:  "watch URL",
+			name:  "watch URL strips extra query",
 			input: "https://www.youtube.com/watch?v=dyTIt1HQ_aw&t=65s",
-			want:  "https://www.youtube.com/watch?v=dyTIt1HQ_aw&t=65s",
+			want:  "https://www.youtube.com/watch?v=dyTIt1HQ_aw",
 		},
 		{
-			name:  "short URL",
+			name:  "short URL becomes watch URL",
 			input: "https://youtu.be/dyTIt1HQ_aw",
-			want:  "https://youtu.be/dyTIt1HQ_aw",
+			want:  "https://www.youtube.com/watch?v=dyTIt1HQ_aw",
+		},
+		{
+			name:  "short URL with query becomes watch URL",
+			input: "https://youtu.be/Pz-vVV0Jmfc?feature=youtu.be",
+			want:  "https://www.youtube.com/watch?v=Pz-vVV0Jmfc",
 		},
 		{
 			name:  "legacy video ID",
@@ -47,6 +52,11 @@ func TestNormalizeYouTubeSourceURL(t *testing.T) {
 		{
 			name:    "youtube.com suffix impostor",
 			input:   "https://youtube.com.evil/watch?v=dyTIt1HQ_aw",
+			wantErr: true,
+		},
+		{
+			name:    "short URL with path suffix",
+			input:   "https://youtu.be/dyTIt1HQ_aw/extra",
 			wantErr: true,
 		},
 	}
