@@ -165,8 +165,14 @@ func (s *autoChunkState) uploadOne(part []byte, byteOffset, scheduleIdx int) err
 		}
 		return fmt.Errorf("upload %s (%d bytes at offset %d): %w", name, len(part), byteOffset, err)
 	}
-	// Descend if there's room in the schedule, otherwise surface as terminal.
+	// Descend only if a smaller schedule level would actually split this part
+	// into more than one request. Once the part already fits within the next
+	// level, re-splitting just re-submits the identical bytes and fails the
+	// same way, so treat the schedule as exhausted and surface the error.
 	next := scheduleIdx + 1
+	for next < len(AutoChunkSchedule) && len(part) <= AutoChunkSchedule[next] {
+		next++
+	}
 	if next >= len(AutoChunkSchedule) {
 		if s.progress != nil {
 			s.progress(AutoChunkProgress{
@@ -235,6 +241,15 @@ func shouldDescendOnAutoChunkError(err error) bool {
 				batchexecute.ErrorTypePermissionDenied,
 				batchexecute.ErrorTypeNotFound,
 				batchexecute.ErrorTypeRateLimit:
+				return false
+			}
+			// A non-retryable error is a state/policy rejection (e.g. code 9
+			// "Failed precondition": notebook at the source limit, an upstream
+			// service refusing the content), not a payload-size problem.
+			// Re-splitting can't cure it — every smaller part is rejected the
+			// same way — so surface it once instead of grinding the whole
+			// schedule down to the 4 KiB floor on a tiny source.
+			if !apiErr.ErrorCode.Retryable {
 				return false
 			}
 		}

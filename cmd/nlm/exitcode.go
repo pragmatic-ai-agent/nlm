@@ -106,6 +106,14 @@ func exitCodeFor(err error) int {
 				batchexecute.ErrorTypeDeadlineExceeded:
 				return exitTransient
 			case batchexecute.ErrorTypeInvalidInput:
+				// Code 9 ("Failed precondition") is a server state/policy
+				// rejection — notebook at the source limit, transient artifact
+				// state, upstream busy — not malformed client input. Classify
+				// it as a precondition so it doesn't read as a bad-args/size
+				// problem (the caller can't fix it by reshaping the request).
+				if apiErr.ErrorCode.Code == 9 {
+					return exitPrecondition
+				}
 				return exitBadArgs
 			case batchexecute.ErrorTypeUnknown:
 				return exitGeneric

@@ -43,6 +43,14 @@ func apiErrorWithType(t batchexecute.ErrorType) *batchexecute.APIError {
 	return &batchexecute.APIError{ErrorCode: ec}
 }
 
+// apiErrorWithCode returns a *batchexecute.APIError carrying the dictionary
+// ErrorCode for the given wire code, so code-specific classification (e.g.
+// code 9 "Failed precondition") can be exercised independently of its Type.
+func apiErrorWithCode(code int) *batchexecute.APIError {
+	ec, _ := batchexecute.GetErrorCode(code)
+	return &batchexecute.APIError{ErrorCode: ec}
+}
+
 func TestExitCodeFor(t *testing.T) {
 	tests := []struct {
 		name string
@@ -75,7 +83,8 @@ func TestExitCodeFor(t *testing.T) {
 		{"ServerError", apiErrorWithType(batchexecute.ErrorTypeServerError), exitTransient},
 		{"Unavailable", apiErrorWithType(batchexecute.ErrorTypeUnavailable), exitTransient},
 		{"NetworkError", apiErrorWithType(batchexecute.ErrorTypeNetworkError), exitTransient},
-		{"InvalidInput", apiErrorWithType(batchexecute.ErrorTypeInvalidInput), exitBadArgs},
+		{"InvalidInput (code 3, bad args)", apiErrorWithType(batchexecute.ErrorTypeInvalidInput), exitBadArgs},
+		{"InvalidInput code 9 (failed precondition)", apiErrorWithCode(9), exitPrecondition},
 		{"Unknown", &batchexecute.APIError{ErrorCode: &batchexecute.ErrorCode{Type: batchexecute.ErrorTypeUnknown}}, exitGeneric},
 
 		// APIError wrapped via fmt.Errorf still reaches the classifier via errors.As.
