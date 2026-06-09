@@ -3090,6 +3090,140 @@ func (c *Client) GetArtifactDownloadURLs(artifactID string) ([]string, error) {
 	return extractArtifactDownloadURLs(responseData[0]), nil
 }
 
+// ArtifactDownloadURLForFormat returns the artifact's signed download URL whose
+// filename matches format ("pdf", "pptx", …). It returns ErrArtifactGenerating
+// when the artifact has no rendered output yet, and an error naming the
+// available formats when the requested one is absent. The URL is browser-usable
+// (the contribution.usercontent.google.com host serves it to an authenticated
+// browser session); see DownloadArtifactFile for the direct-fetch caveat.
+func (c *Client) ArtifactDownloadURLForFormat(artifactID, format string) (string, error) {
+	urls, err := c.GetArtifactDownloadURLs(artifactID)
+	if err != nil {
+		return "", fmt.Errorf("get artifact download URLs: %w", err)
+	}
+	if len(urls) == 0 {
+		return "", ErrArtifactGenerating
+	}
+
+	want := "." + strings.ToLower(strings.TrimPrefix(format, "."))
+	var available []string
+	for _, u := range urls {
+		ext := artifactDownloadExtension(u)
+		if ext != "" {
+			available = append(available, strings.TrimPrefix(ext, "."))
+		}
+		if ext == want {
+			return u, nil
+		}
+	}
+	return "", fmt.Errorf("no %s download for artifact %s (available: %s)",
+		strings.TrimPrefix(want, "."), artifactID, strings.Join(available, ", "))
+}
+
+// DownloadArtifactFile fetches an artifact's rendered output (e.g. a slide
+// deck's .pdf or .pptx) to filename, selecting the file by format. It can fail
+// with a 403 even for a valid session: the contribution.usercontent.google.com
+// host that serves these files requires a full browser auth context that the
+// CLI's cookies do not satisfy (the same limitation audio/video CDN downloads
+// hit). Callers should fall back to ArtifactDownloadURLForFormat and hand the
+// URL to a browser when this returns a download/permission error.
+func (c *Client) DownloadArtifactFile(artifactID, format, filename string) error {
+	chosen, err := c.ArtifactDownloadURLForFormat(artifactID, format)
+	if err != nil {
+		return err
+	}
+	return c.downloadAuthedFile(chosen, filename)
+}
+
+// artifactDownloadExtension returns the lowercase ".ext" carried in a download
+// URL's filename query parameter (e.g. "Deck.pptx" -> ".pptx"), or "" if none.
+func artifactDownloadExtension(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	name := u.Query().Get("filename")
+	if name == "" {
+		return ""
+	}
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		return strings.ToLower(name[i:])
+	}
+	return ""
+}
+
+// downloadAuthedFile GETs fileURL with the client's session cookies and writes
+// the body to filename. Used for contribution.usercontent.google.com artifact
+// downloads, which are gated on the NotebookLM session cookie. The header set
+// and authuser query parameter mirror DownloadVideoWithAuth, which downloads
+// from the same usercontent host; without them the host answers 403.
+func (c *Client) downloadAuthedFile(fileURL, filename string) error {
+	if !strings.Contains(fileURL, "authuser=") {
+		sep := "?"
+		if strings.Contains(fileURL, "?") {
+			sep = "&"
+		}
+		fileURL += sep + "authuser=" + c.authUserOrDefault()
+	}
+
+	req, err := http.NewRequest("GET", fileURL, nil)
+	if err != nil {
+		return fmt.Errorf("create download request: %w", err)
+	}
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.6")
+	req.Header.Set("Range", "bytes=0-")
+	req.Header.Set("Referer", "https://notebooklm.google.com/")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-Mode", "no-cors")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+	cookies := c.rpc.Config.Cookies
+	if cookies != "" {
+		req.Header.Set("Cookie", cookies)
+	}
+
+	// The usercontent host 302-redirects to a storage backend. Go drops the
+	// Cookie header on cross-origin hops, which the backend answers with 403,
+	// so re-attach it on every redirect (the same approach downloadAudioFromURL
+	// uses for these CDN URLs).
+	client := httpClientWithTimeout(300 * time.Second)
+	client.CheckRedirect = func(r *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		if cookies != "" {
+			r.Header.Set("Cookie", cookies)
+		}
+		return nil
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return fmt.Errorf("download failed with status %s (check authentication)", resp.Status)
+	}
+	// An HTML body means the server redirected to a login/consent page rather
+	// than serving the file — surface that as an auth problem, not a saved file.
+	if ct := resp.Header.Get("Content-Type"); strings.HasPrefix(ct, "text/html") {
+		return fmt.Errorf("download returned HTML, not a file (authentication may have expired)")
+	}
+
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("create output file: %w", err)
+	}
+	defer file.Close()
+	if _, err := io.Copy(file, resp.Body); err != nil {
+		return fmt.Errorf("write output file: %w", err)
+	}
+	return nil
+}
+
 // DeleteArtifact deletes an artifact by ID using the V5N4be RPC.
 //
 // Wire format verified against HAR capture 2026-04-07 — see

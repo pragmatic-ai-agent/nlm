@@ -36,7 +36,11 @@ func TestParseDeckDownloadArgsRejectsBadFormat(t *testing.T) {
 	}
 }
 
-func TestDeckDownloadFallbackPrintsBrowserURL(t *testing.T) {
+// TestDeckDownloadRequiresAuth verifies that deck download now performs a real
+// authenticated fetch: without credentials it reports an auth error rather than
+// silently succeeding. (Previously it was a no-auth command that only printed a
+// browser URL — issue #31: --format pptx "Download failed".)
+func TestDeckDownloadRequiresAuth(t *testing.T) {
 	tmpHome, err := os.MkdirTemp("", "nlm-test-home-*")
 	if err != nil {
 		t.Fatalf("failed to create temp home: %v", err)
@@ -47,18 +51,17 @@ func TestDeckDownloadFallbackPrintsBrowserURL(t *testing.T) {
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + tmpHome}
 	output, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("deck download unexpectedly succeeded\n%s", output)
+		t.Fatalf("deck download unexpectedly succeeded without auth\n%s", output)
 	}
 	out := string(output)
-	if !strings.Contains(out, "https://notebooklm.google.com/notebook/notebook-123") {
-		t.Fatalf("deck download did not print browser URL\n%s", out)
-	}
-	if strings.Contains(out, "Authentication required") {
-		t.Fatalf("deck download fallback should not require auth\n%s", out)
+	if !strings.Contains(out, "uthentication") {
+		t.Fatalf("deck download without auth did not report an auth error\n%s", out)
 	}
 }
 
-func TestLegacySlideDeckDownloadPrintsBrowserURL(t *testing.T) {
+// TestLegacySlideDeckDownloadWarnsDeprecated verifies the legacy alias still
+// prints the deprecation warning and routes to the same (now real) downloader.
+func TestLegacySlideDeckDownloadWarnsDeprecated(t *testing.T) {
 	tmpHome, err := os.MkdirTemp("", "nlm-test-home-*")
 	if err != nil {
 		t.Fatalf("failed to create temp home: %v", err)
@@ -69,13 +72,10 @@ func TestLegacySlideDeckDownloadPrintsBrowserURL(t *testing.T) {
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + tmpHome}
 	output, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("legacy download unexpectedly succeeded\n%s", output)
+		t.Fatalf("legacy download unexpectedly succeeded without auth\n%s", output)
 	}
 	out := string(output)
 	if !strings.Contains(out, "nlm: 'download slide-deck' is deprecated; use 'deck download'") {
 		t.Fatalf("legacy download did not print compatibility warning\n%s", out)
-	}
-	if !strings.Contains(out, "https://notebooklm.google.com/notebook/notebook-123") {
-		t.Fatalf("legacy download did not print browser URL\n%s", out)
 	}
 }

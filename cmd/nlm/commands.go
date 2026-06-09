@@ -599,31 +599,29 @@ var commands = []command{
 	{
 		name:      "deck-download",
 		argsUsage: "<notebook-id> --id <artifact-id> [--format pdf|pptx] [--output file]",
-		usage:     "Print browser URL for slide deck download", section: "Deck",
+		usage:     "Download a slide deck (PDF/PPTX)", section: "Deck",
 		minArgs: 1, maxArgs: -1,
-		noAuth: true, noClient: true,
 		hidden:              true,
 		validate:            validateDeckDownloadArgs,
 		validateWithOptions: validateDeckDownloadArgsWithOptions,
 		help:                printDeckDownloadUsage,
-		run:                 func(c *api.Client, args []string) error { return runDeckDownloadFallback(args) },
+		run:                 runDeckDownload,
 		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
-			return runDeckDownloadFallbackWithOptions(args, opts)
+			return runDeckDownload(c, args)
 		},
 	},
 	{
 		name:      "download slide-deck",
 		argsUsage: "<notebook-id> --id <artifact-id> [--format pdf|pptx] [--output file]",
-		usage:     "Print browser URL for slide deck download", section: "Deck",
+		usage:     "Download a slide deck (PDF/PPTX)", section: "Deck",
 		minArgs: 1, maxArgs: -1,
-		noAuth: true, noClient: true,
 		hidden:              true,
 		validate:            validateDeckDownloadArgs,
 		validateWithOptions: validateDeckDownloadArgsWithOptions,
 		help:                printDeckDownloadUsage,
-		run:                 func(c *api.Client, args []string) error { return runDeckDownloadFallback(args) },
+		run:                 runDeckDownload,
 		runWithOptions: func(c *api.Client, args []string, opts globalOptions) error {
-			return runDeckDownloadFallbackWithOptions(args, opts)
+			return runDeckDownload(c, args)
 		},
 	},
 
