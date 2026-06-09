@@ -1014,6 +1014,16 @@ func (c *Client) uploadFileSource(projectID, filename string, content []byte) (s
 	// Step 2: Start the resumable upload session with the server's SOURCE_ID.
 	uploadURL, err := c.startResumableUpload(projectID, filename, sourceID, len(content))
 	if err != nil {
+		// Scotty sometimes returns 500 with X-Goog-Upload-Status: final even
+		// though it already registered the source. The source was registered
+		// in step 1, so reconcile: if it now appears in the project, the upload
+		// effectively succeeded and reporting a failure would be misleading.
+		if isUploadFinalizedError(err) && c.sourceExistsInProject(projectID, sourceID) {
+			return sourceID, nil
+		}
+		if isUploadFinalizedError(err) {
+			return "", fmt.Errorf("start upload: %w (the upload may have finalized anyway; run 'nlm source list %s' to check for %q)", err, projectID, filename)
+		}
 		return "", fmt.Errorf("start upload: %w", err)
 	}
 
@@ -1031,6 +1041,37 @@ func (c *Client) uploadFileSource(projectID, filename string, content []byte) (s
 	}
 
 	return sourceID, nil
+}
+
+// isUploadFinalizedError reports whether err is the Scotty failure mode where
+// the upload init returns a 5xx carrying X-Goog-Upload-Status: final — a state
+// in which the source has often already been created server-side despite the
+// error. startResumableUpload folds that header into the error message.
+func isUploadFinalizedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "X-Goog-Upload-Status=final")
+}
+
+// sourceExistsInProject reports whether sourceID is present in the project's
+// current source list. Used to reconcile an upload that errored but may have
+// landed. A lookup error is treated as "not found" so the caller surfaces the
+// original failure rather than masking it.
+func (c *Client) sourceExistsInProject(projectID, sourceID string) bool {
+	if sourceID == "" {
+		return false
+	}
+	project, err := c.GetProject(projectID)
+	if err != nil {
+		return false
+	}
+	for _, src := range project.Sources {
+		if src.SourceId != nil && src.SourceId.SourceId == sourceID {
+			return true
+		}
+	}
+	return false
 }
 
 func buildSourceUploadMetadata(projectID, filename, sourceID string) ([]byte, error) {
