@@ -318,3 +318,90 @@ func containsName(files []discovered, name string) bool {
 	}
 	return false
 }
+
+func TestReadIgnoreFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".nlmignore")
+	content := "# a comment\n\nexamples/redteam-donotanswer/\n  *.bin  \n#trailing comment\nvendor/\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readIgnoreFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"examples/redteam-donotanswer/", "*.bin", "vendor/"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("readIgnoreFile = %v, want %v", got, want)
+	}
+
+	// A missing file is not an error.
+	got, err = readIgnoreFile(filepath.Join(dir, "does-not-exist"))
+	if err != nil || got != nil {
+		t.Errorf("missing file: got (%v, %v), want (nil, nil)", got, err)
+	}
+}
+
+func TestMergeIgnoresHonorsNlmignore(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		// Disable commit/tag signing at the command level so a user's global
+		// gpg/ssh signing config doesn't reach into this throwaway repo and
+		// block on a passphrase prompt in the non-interactive subprocess.
+		argv := append([]string{"-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}, args...)
+		cmd := exec.Command("git", argv...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	run("init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, ".nlmignore"), []byte("data/\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "data", "big.csv"), []byte("a,b\n1,2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "-A")
+	run("commit", "-q", "-m", "init")
+
+	// mergeIgnores must pick up the .nlmignore pattern alongside any explicit
+	// excludes, and applyExcludes must then drop the data/ file.
+	excludes, err := mergeIgnores([]string{dir}, []string{"*.tmp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantExcludes := []string{"*.tmp", "data/"}
+	if !reflect.DeepEqual(excludes, wantExcludes) {
+		t.Fatalf("mergeIgnores = %v, want %v", excludes, wantExcludes)
+	}
+
+	files, err := discoverFiles([]string{dir}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err = applyExcludes(files, excludes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsName(files, "data/big.csv") {
+		t.Error("data/big.csv should have been excluded by .nlmignore")
+	}
+	if !containsName(files, "main.go") {
+		t.Error("main.go should have survived")
+	}
+}

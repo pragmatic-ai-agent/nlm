@@ -90,7 +90,11 @@ func Pack(paths []string, opts Options) (chunks [][]byte, names []string, err er
 	if err != nil {
 		return nil, nil, fmt.Errorf("discover files: %w", err)
 	}
-	files, err = applyExcludes(files, opts.Exclude)
+	excludes, err := mergeIgnores(paths, opts.Exclude)
+	if err != nil {
+		return nil, nil, err
+	}
+	files, err = applyExcludes(files, excludes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -122,7 +126,11 @@ func Run(ctx context.Context, c Client, notebookID string, paths []string, opts 
 	if err != nil {
 		return fmt.Errorf("discover files: %w", err)
 	}
-	files, err = applyExcludes(files, opts.Exclude)
+	excludes, err := mergeIgnores(paths, opts.Exclude)
+	if err != nil {
+		return err
+	}
+	files, err = applyExcludes(files, excludes)
 	if err != nil {
 		return err
 	}

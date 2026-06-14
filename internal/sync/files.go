@@ -199,3 +199,81 @@ func excluded(path string, patterns []string) bool {
 	}
 	return false
 }
+
+// ignoreFileName is the per-directory exclude file sync honors automatically,
+// so a checkout can keep large or policy-sensitive files out of every sync
+// without anyone having to remember the --exclude flag.
+const ignoreFileName = ".nlmignore"
+
+// mergeIgnores returns the explicit --exclude patterns combined with any
+// patterns discovered in .nlmignore files under the synced paths. Explicit
+// flags come first so their behavior is unchanged when no ignore file exists.
+func mergeIgnores(paths, exclude []string) ([]string, error) {
+	fromFile, err := loadNlmignore(paths)
+	if err != nil {
+		return nil, err
+	}
+	if len(fromFile) == 0 {
+		return exclude, nil
+	}
+	merged := make([]string, 0, len(exclude)+len(fromFile))
+	merged = append(merged, exclude...)
+	merged = append(merged, fromFile...)
+	return merged, nil
+}
+
+// loadNlmignore collects exclude patterns from a .nlmignore file for each
+// directory in paths. The file is read from the git repo root (so its patterns
+// match the repo-root-relative member names git ls-files produces), falling
+// back to the directory itself outside a checkout. Each non-empty,
+// non-comment line is one pattern, using the same matching as --exclude. A
+// missing file is not an error; paths that are plain files are ignored here.
+func loadNlmignore(paths []string) ([]string, error) {
+	if paths == nil {
+		return nil, nil
+	}
+	seenRoot := make(map[string]bool)
+	var patterns []string
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		root := gitRoot(p)
+		if root == "" {
+			root = p
+		}
+		if seenRoot[root] {
+			continue
+		}
+		seenRoot[root] = true
+		got, err := readIgnoreFile(filepath.Join(root, ignoreFileName))
+		if err != nil {
+			return nil, err
+		}
+		patterns = append(patterns, got...)
+	}
+	return patterns, nil
+}
+
+// readIgnoreFile parses an ignore file into exclude patterns. Blank lines and
+// lines beginning with '#' are skipped; surrounding whitespace is trimmed. A
+// non-existent file yields no patterns and no error.
+func readIgnoreFile(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	var patterns []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		patterns = append(patterns, line)
+	}
+	return patterns, nil
+}
