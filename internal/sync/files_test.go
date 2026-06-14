@@ -86,7 +86,11 @@ func TestGitFilesSkipsDeletedUnstaged(t *testing.T) {
 
 	run := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
+		// Disable commit/tag signing at the command level so a user's global
+		// gpg/ssh signing config doesn't reach into this throwaway repo and
+		// block on a passphrase prompt in the non-interactive subprocess.
+		argv := append([]string{"-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}, args...)
+		cmd := exec.Command("git", argv...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(),
 			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
@@ -161,7 +165,11 @@ func TestGitFilesNamesAreRepoRootRelative(t *testing.T) {
 
 	run := func(workdir string, args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
+		// Disable commit/tag signing at the command level so a user's global
+		// gpg/ssh signing config doesn't reach into this throwaway repo and
+		// block on a passphrase prompt in the non-interactive subprocess.
+		argv := append([]string{"-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}, args...)
+		cmd := exec.Command("git", argv...)
 		cmd.Dir = workdir
 		cmd.Env = append(os.Environ(),
 			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
@@ -213,7 +221,11 @@ func TestDiscoverFilesIncludeUntracked(t *testing.T) {
 
 	run := func(args ...string) {
 		t.Helper()
-		cmd := exec.Command("git", args...)
+		// Disable commit/tag signing at the command level so a user's global
+		// gpg/ssh signing config doesn't reach into this throwaway repo and
+		// block on a passphrase prompt in the non-interactive subprocess.
+		argv := append([]string{"-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}, args...)
+		cmd := exec.Command("git", argv...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(),
 			"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
