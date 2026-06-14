@@ -3037,7 +3037,7 @@ func (c *Client) GetArtifact(artifactID string) (*pb.Artifact, error) {
 			}
 		}
 	}
-	return nil, fmt.Errorf("artifact %q not found", artifactID)
+	return nil, fmt.Errorf("artifact %q: %w", artifactID, ErrArtifactNotFound)
 }
 
 // getArtifactDirect tries the v9rmvd RPC. The wire is JS-bundle-verified

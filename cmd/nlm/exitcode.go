@@ -80,7 +80,8 @@ func exitCodeFor(err error) int {
 	case errors.Is(err, api.ErrArtifactGenerating),
 		errors.Is(err, api.ErrResearchPolling):
 		return exitBusy
-	case errors.Is(err, api.ErrNotebookNotAccessible):
+	case errors.Is(err, api.ErrNotebookNotAccessible),
+		errors.Is(err, api.ErrArtifactNotFound):
 		return exitNotFound
 	}
 

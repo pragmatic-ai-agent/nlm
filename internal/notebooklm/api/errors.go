@@ -49,6 +49,10 @@ var (
 	// finished artifact should retry. Maps to exit code 7 (resource busy).
 	ErrArtifactGenerating = errors.New("artifact is still generating")
 
+	// ErrArtifactNotFound indicates no artifact with the requested ID exists
+	// in any of the account's notebooks. Maps to exit code 4 (not found).
+	ErrArtifactNotFound = errors.New("artifact not found")
+
 	// ErrResearchPolling indicates a deep-research request is still being
 	// polled via e3bVqc and the final report has not arrived. Maps to exit
 	// code 7 (resource busy).
