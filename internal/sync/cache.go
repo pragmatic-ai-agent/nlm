@@ -16,9 +16,8 @@ type hashCache struct {
 }
 
 func newHashCache(notebookID string) *hashCache {
-	home, _ := os.UserHomeDir()
 	return &hashCache{
-		dir: filepath.Join(home, ".cache", "nlm", "sync", notebookID),
+		dir: filepath.Join(cacheRoot(), "sync", notebookID),
 	}
 }
 
@@ -54,10 +53,21 @@ type sourceCache struct {
 }
 
 func newSourceCache() *sourceCache {
-	home, _ := os.UserHomeDir()
 	return &sourceCache{
-		dir: filepath.Join(home, ".cache", "nlm", "sources"),
+		dir: filepath.Join(cacheRoot(), "sources"),
 	}
+}
+
+// cacheRoot returns the base directory for nlm's sync caches, ~/.cache/nlm.
+// When the home directory cannot be determined (e.g. a restricted sandbox)
+// it falls back to the OS temp dir so the path stays absolute and the cache
+// degrades to a scratch location rather than an unanchored relative path.
+func cacheRoot() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return filepath.Join(os.TempDir(), "nlm-cache")
+	}
+	return filepath.Join(home, ".cache", "nlm")
 }
 
 func (c *sourceCache) path(notebookID string) string {
