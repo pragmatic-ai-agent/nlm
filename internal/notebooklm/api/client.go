@@ -1,4 +1,3 @@
-// Package api provides the NotebookLM API client.
 package api
 
 import (
