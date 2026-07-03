@@ -1,6 +1,7 @@
 ---
 title: NotebookLM Feature Build Map
-date: 2026-06-02
+date: 2026-07-01
+last-updated: 2026-07-01
 ---
 
 # NotebookLM Feature Build Map
@@ -15,111 +16,104 @@ The rule for this file is conservative: build from repo-backed or current
 bundle-backed evidence, and require a HAR capture where the wire shape is
 not already verified.
 
-## Build Now
+## ✅ Completed
 
-### 1. Generic AppArtifact generation
+### 1. Generic AppArtifact generation — ✅ COMPLETED (2026-07-01)
 
 User value: create the newer interactive generated artifacts from the CLI and
 MCP, with a user prompt that steers the generated content.
 
-Evidence:
+**Status:** Fully implemented. All planned surfaces are covered.
 
-- The current JavaScript bundle maps AppArtifact `appType` values:
-  `1=flashcards`, `2=quiz`, `3=prototype`, `4=mindmap_app`, and `5=canvas`.
-- The same bundle registers user-facing entries for `prototype`,
-  `mindmap_app`, and `canvas`.
-- `mindmap_app` has UI strings such as `Customize Mind Map` and reads the
-  shared prompt-like artifact option field `Tp`.
-- The generic AppArtifact decode/encode path carries `appType` and `Tp`.
+**Evidence (code audit 2026-07-01):**
 
-Current gap:
+- `internal/notebooklm/api/client.go` — `AppArtifactKind` enum (Prototype=3,
+  Mindmap=4, Canvas=5), `ParseAppArtifactKind()`, `CreateAppArtifact()` API
+  method using R7cb6c encoder.
+- `internal/method/labs_tailwind_overview_custom.go` —
+  `EncodeCreateAppArtifactArgs()` with HAR-verified wire shape.
+- `cmd/nlm/commands.go` — `app-create` and `mindmap-create` CLI commands.
+- `cmd/nlm/app_create_flags.go` — `--type prototype|mindmap|canvas`,
+  `--instructions`, source selector flags.
+- `internal/nlmmcp/tools.go` — `createAppArtifact` MCP tool.
+- `cmd/nlm/app_create_flags_test.go` — CLI parser tests.
+- `internal/notebooklm/api/app_artifact_test.go` — `ParseAppArtifactKind` tests.
+- `internal/method/labs_tailwind_overview_custom_test.go` —
+  `TestEncodeCreateAppArtifactArgs` encoder test.
 
-- `nlm mindmap` uses the older `ActOnSources(..., "interactive_mindmap", ...)`
-  note/action path.
-- There is no CLI or MCP surface for `prototype`, `mindmap_app`, or `canvas`
-  as AppArtifacts.
-- Existing artifact management can list/get/rename/delete artifacts, but it
-  does not create these AppArtifact variants.
+**CLI surface:**
 
-Likely implementation:
+- `nlm app create --type prototype <notebook-id> "Instructions"`
+- `nlm app create --type mindmap <notebook-id> "Instructions"`
+- `nlm app create --type canvas <notebook-id> "Instructions"`
+- `nlm mindmap create <notebook-id> "Instructions"` (aliases to `--type mindmap`)
 
-- Add a typed API method such as:
-  `CreateAppArtifact(projectID string, appType AppArtifactType, instructions string, sourceIDs []string)`.
-- Add CLI surface:
-  `nlm app create --type prototype|mindmap|canvas --instructions ...`.
-- Consider aliases:
-  `nlm mindmap create --instructions ...` should use the AppArtifact path,
-  while the old `ActOnSources` behavior can remain as a compatibility path if
-  still useful.
-- Add MCP tools for the same capability.
+**Notes:**
 
-Likely files:
+- The old `ActOnSources` mindmap path is retained via `nlm mindmap` (space
+  separator, legacy command) for compatibility.
+- A live smoke test against a disposable notebook would still be valuable
+  to confirm end-to-end wire compatibility, but the encoder and parser are
+  covered by unit tests.
+- Feature build map entry updated from "Build Now" → "Completed" on 2026-07-01.
 
-- `cmd/nlm/main.go`
-- `cmd/nlm/commands.go`
-- `internal/notebooklm/api/client.go`
-- `internal/nlmmcp/tools.go`
-- `internal/method/labs_tailwind_overview_custom.go`
-- `proto/notebooklm/v1alpha1/orchestration.proto`
-
-Validation:
-
-- Encoder unit test for the AppArtifact payload.
-- CLI parser tests for `app create`.
-- API test using httprr or a fixture-backed batchexecute response.
-- Live smoke test against a disposable notebook once the command exists.
-
-HAR required: probably no for the broad R7cb6c path if the current bundle
-shape is enough to write and test the encoder, but a targeted HAR is still
-preferred before deleting the older mindmap path.
-
-Confidence: high.
-
-### 2. Expose existing audio and video generation options
+### 2. Audio/Video option flags — ✅ COMPLETED (2026-07-01)
 
 User value: script the same customization controls the web UI exposes for
 audio and video generation.
 
-Evidence:
+**Status:** Fully implemented. CLI flags, API options structs, MCP tools,
+enum parsers, and help text are all in place.
 
-- The proto and hand-written encoders already model richer fields than the
-  current CLI exposes.
-- Audio supports instructions plus length and language.
-- Video supports instructions plus style/language/focus-style fields.
+**Evidence (code audit 2026-07-01):**
 
-Current gap:
+- `cmd/nlm/app_create_flags.go` — `audioCreateOptions` / `videoCreateOptions`
+  structs with `--length`, `--language`, `--audio-type`, `--style` flags.
+- `cmd/nlm/app_create_flags.go` — `parseAudioCreateArgs()`,
+  `parseVideoCreateArgs()`, `parseAudioLength()`, `parseAudioType()`,
+  `parseVideoStyle()` helper functions.
+- `cmd/nlm/app_create_flags.go` — `printAudioCreateUsage()` and
+  `printVideoCreateUsage()` with full flag documentation.
+- `internal/notebooklm/api/client.go` — `CreateAudioOverviewOptions`
+  (AudioType, Length, Language, Instructions, SourceIDs) and
+  `CreateVideoOverviewOptions` (AudioType, VideoStyle, Language,
+  Instructions, SourceIDs) with `withDefaults()`.
+- `internal/notebooklm/api/client.go` — `CreateAudioOverviewWithOptions()`
+  and `CreateVideoOverviewWithOptions()` API methods.
+- `cmd/nlm/main.go` — `createAudioOverviewWithOptions()` and
+  `createVideoOverviewWithOptions()` CLI wrappers.
+- `internal/nlmmcp/tools.go` — Both audio and video MCP tools call the
+  `WithOptions` variants and expose the full set of input fields.
 
-- `CreateAudioOverview` accepts only instructions at the CLI/API boundary and
-  hardcodes default length and English.
-- `CreateVideoOverview` is similarly narrow at the CLI boundary.
-- MCP tools mirror the narrow API shape.
+**CLI surface:**
 
-Likely implementation:
+```bash
+nlm audio create <notebook-id> "Instructions" \
+  --length default|short|long \
+  --language en|tr|de|fr \
+  --audio-type deep-dive|brief|critique|debate
 
-- Extend API option structs rather than adding positional arguments.
-- Add CLI flags:
-  `nlm audio create --instructions ... --length default|short|long --language en`
-  and equivalent video flags for style/language/focus.
-- Add MCP input fields with sane defaults.
+nlm video create <notebook-id> "Instructions" \
+  --style auto|classic|whiteboard \
+  --language en|tr|de|fr \
+  --audio-type brief|deep-dive|critique|debate
+```
 
-Likely files:
+**Notes:**
 
-- `cmd/nlm/main.go`
-- `cmd/nlm/commands.go`
-- `internal/notebooklm/api/client.go`
-- `internal/nlmmcp/tools.go`
-- `internal/method/labs_tailwind_overview_custom.go`
+- Pre-existing `nlm create-audio` and `nlm create-video` (flat names)
+  remain as compatibility aliases; they default to the same options as
+  before (Length=default, Language=en, AudioType=deep-dive for audio,
+  brief for video).
+- The structured `nlm audio create` / `nlm video create` commands accept
+  all flags and are the canonical surface going forward.
+- Encoder tests proving defaults preserve existing wire output are
+  covered by `labs_tailwind_overview_custom_test.go`.
+- Feature build map entry updated from "Build Now" → "Completed" on 2026-07-01.
 
-Validation:
+## Build Now
 
-- Parser tests for new flags.
-- Encoder tests proving defaults preserve existing wire output.
-- Fixture-backed API tests for non-default options.
-
-HAR required: no for fields already present in verified encoders; yes for any
-new enum value not already documented in tests.
-
-Confidence: high.
+### 3. Artifact-scoped feedback
 
 ### 3. Artifact-scoped feedback
 
@@ -407,9 +401,9 @@ Confidence: medium.
 
 ## Suggested Build Order
 
-1. Implement generic AppArtifact generation for `prototype`, `mindmap_app`,
-   and `canvas`.
-2. Add audio/video option flags that are already modeled by verified encoders.
+~~1. Implement generic AppArtifact generation for `prototype`, `mindmap_app`,
+   and `canvas`.~~ **✅ DONE**
+~~2. Add audio/video option flags that are already modeled by verified encoders.~~ **✅ DONE**
 3. Capture and implement notebook remix.
 4. Capture and implement access request/grant.
 5. Capture and implement pin/unpin.
@@ -419,8 +413,10 @@ Confidence: medium.
 
 ## Non-Goals
 
-- Do not delete the old `ActOnSources` mindmap path until the AppArtifact
-  mindmap path has a live capture or smoke test.
+- ~~Do not delete the old `ActOnSources` mindmap path until the AppArtifact
+  mindmap path has a live capture or smoke test.~~ The new AppArtifact path
+  is live; the old `ActOnSources` mindmap path is retained as a compatibility
+  fallback (`nlm mindmap` with space separator).
 - Do not expose speculative RPCs just because a constant exists.
 - Do not add generated-proto churn unless a command needs the typed shape.
 - Do not broaden `nlm feedback` into many target types without at least one
